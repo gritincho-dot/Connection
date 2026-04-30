@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "IEZsIcwsDVV7vNAh6wvJP"
+uri = "file://artifacts/circle-link/assets/images/icon.png"
+type = "image"
+title = "circle link icon"
