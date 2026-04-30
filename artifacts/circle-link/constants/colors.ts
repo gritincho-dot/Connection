@@ -1,61 +1,35 @@
+const palette = {
+  text: "#1e1b16",
+  tint: "#0f766e",
+
+  background: "#f4eedc",
+  foreground: "#1e1b16",
+
+  card: "#fffdf6",
+  cardForeground: "#1e1b16",
+
+  primary: "#0f766e",
+  primaryForeground: "#fffdf6",
+
+  secondary: "#e9e1c8",
+  secondaryForeground: "#1e1b16",
+
+  muted: "#ece4cb",
+  mutedForeground: "#7a7159",
+
+  accent: "#9333ea",
+  accentForeground: "#ffffff",
+
+  destructive: "#dc2626",
+  destructiveForeground: "#ffffff",
+
+  border: "#d6cdb1",
+  input: "#e9e1c8",
+};
+
 const colors = {
-  light: {
-    text: "#e2e8f0",
-    tint: "#22d3ee",
-
-    background: "#070a14",
-    foreground: "#e2e8f0",
-
-    card: "#0f172a",
-    cardForeground: "#e2e8f0",
-
-    primary: "#22d3ee",
-    primaryForeground: "#031016",
-
-    secondary: "#1e293b",
-    secondaryForeground: "#e2e8f0",
-
-    muted: "#1e293b",
-    mutedForeground: "#94a3b8",
-
-    accent: "#a855f7",
-    accentForeground: "#ffffff",
-
-    destructive: "#f43f5e",
-    destructiveForeground: "#ffffff",
-
-    border: "#1e293b",
-    input: "#1e293b",
-  },
-  dark: {
-    text: "#e2e8f0",
-    tint: "#22d3ee",
-
-    background: "#070a14",
-    foreground: "#e2e8f0",
-
-    card: "#0f172a",
-    cardForeground: "#e2e8f0",
-
-    primary: "#22d3ee",
-    primaryForeground: "#031016",
-
-    secondary: "#1e293b",
-    secondaryForeground: "#e2e8f0",
-
-    muted: "#1e293b",
-    mutedForeground: "#94a3b8",
-
-    accent: "#a855f7",
-    accentForeground: "#ffffff",
-
-    destructive: "#f43f5e",
-    destructiveForeground: "#ffffff",
-
-    border: "#1e293b",
-    input: "#1e293b",
-  },
-
+  light: palette,
+  dark: palette,
   radius: 14,
 };
 

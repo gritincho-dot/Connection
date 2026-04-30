@@ -3,24 +3,22 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { StatsBar } from "@/components/StatsBar";
 import { UpgradeRow } from "@/components/UpgradeRow";
-import { MAX_EXP, MAX_MULT } from "@/constants/game";
+import { MAX_ADD, MAX_EXP, MAX_MULT } from "@/constants/game";
 import { useGame } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function UpgradesScreen() {
   const colors = useColors();
-  const {
-    state,
-    costs,
-    applyDiscount,
-    buyPower,
-    buyMultiplierCircle,
-    buyExponentialCircle,
-  } = useGame();
+  const { state, costs, applyDiscount, buyEnergy, addCircle } = useGame();
 
-  const powerCost = applyDiscount(costs.power);
-  const multCost = costs.multiplier !== null ? applyDiscount(costs.multiplier) : null;
-  const expCost = costs.exponential !== null ? applyDiscount(costs.exponential) : null;
+  const energyCost = applyDiscount(costs.energy);
+  const addCost = costs.add !== null ? applyDiscount(costs.add) : null;
+  const multCost = costs.mult !== null ? applyDiscount(costs.mult) : null;
+  const expCost = costs.exp !== null ? applyDiscount(costs.exp) : null;
+
+  const addCount = state.circles.filter((c) => c.type === "add").length;
+  const multCount = state.circles.filter((c) => c.type === "mult").length;
+  const expCount = state.circles.filter((c) => c.type === "exp").length;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -41,57 +39,74 @@ export default function UpgradesScreen() {
 
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-            Connection power
+            Boost
           </Text>
           <UpgradeRow
             iconName="zap"
             iconColor={colors.primary}
-            title="Connection Power"
-            description={`+20% rate per level. Currently +${state.powerLevel * 20}%.`}
-            level={`Lv ${state.powerLevel}`}
+            title="Connection Energy"
+            description={`+20% earnings on release per level. Currently +${state.energyLevel * 20}%.`}
+            level={`Lv ${state.energyLevel}`}
             costLabel="pts"
-            costValue={powerCost}
+            costValue={energyCost}
             currency="points"
-            affordable={state.points >= powerCost}
-            onBuy={buyPower}
+            affordable={state.points >= energyCost}
+            onBuy={buyEnergy}
           />
         </View>
 
         <View style={styles.section}>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
-            Add circles to the board
+            Add new circles
+          </Text>
+          <Text style={[styles.note, { color: colors.mutedForeground }]}>
+            Each new circle gets a random value between 1 and 10. Use the
+            Upgrade button on the play board to re-roll its value.
           </Text>
           <UpgradeRow
+            iconName="plus"
+            iconColor="#16a34a"
+            title="Addition Circle"
+            description="Adds its value to the chain's base before multipliers."
+            level={`${addCount} / ${MAX_ADD}`}
+            costLabel="pts"
+            costValue={addCost}
+            currency="points"
+            affordable={addCost !== null && state.points >= addCost}
+            maxed={costs.add === null}
+            onBuy={() => addCircle("add")}
+          />
+          <UpgradeRow
             iconName="x"
-            iconColor="#a855f7"
-            title="Multiplier Circle"
-            description={`Adds a × node. Each one in a chain doubles its earnings.`}
-            level={`${state.multiplierCount} / ${MAX_MULT}`}
+            iconColor="#9333ea"
+            title="Multiplication Circle"
+            description="Multiplies the chain's running total by its value."
+            level={`${multCount} / ${MAX_MULT}`}
             costLabel="pts"
             costValue={multCost}
             currency="points"
             affordable={multCost !== null && state.points >= multCost}
-            maxed={costs.multiplier === null}
-            onBuy={buyMultiplierCircle}
+            maxed={costs.mult === null}
+            onBuy={() => addCircle("mult")}
           />
           <UpgradeRow
             iconName="trending-up"
-            iconColor="#f59e0b"
+            iconColor="#ea580c"
             title="Exponential Circle"
-            description={`Adds a ^ node. Each one in a chain multiplies earnings by 1.85×.`}
-            level={`${state.exponentialCount} / ${MAX_EXP}`}
+            description="Raises the chain's running total to a power based on its value."
+            level={`${expCount} / ${MAX_EXP}`}
             costLabel="pts"
             costValue={expCost}
             currency="points"
             affordable={expCost !== null && state.points >= expCost}
-            maxed={costs.exponential === null}
-            onBuy={buyExponentialCircle}
+            maxed={costs.exp === null}
+            onBuy={() => addCircle("exp")}
           />
         </View>
 
         {state.permDiscount > 0 ? (
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            Discount applied: {state.permDiscount * 10}% off all upgrades
+            Discount applied: {state.permDiscount * 10}% off all costs
           </Text>
         ) : null}
       </ScrollView>
@@ -109,7 +124,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
-    paddingBottom: 120,
+    paddingBottom: 140,
     gap: 24,
   },
   header: {
@@ -134,9 +149,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   note: {
-    fontFamily: "Inter_500Medium",
+    fontFamily: "Inter_400Regular",
     fontSize: 12,
+    lineHeight: 16,
     textAlign: "center",
-    marginTop: 8,
   },
 });

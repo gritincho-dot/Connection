@@ -10,39 +10,44 @@ import React, {
 } from "react";
 
 import {
-  BASE_RATE_PER_CIRCLE,
+  ADD_COST,
   DISCOUNT_PER_LVL,
-  EXP_BASE,
+  ENERGY_BONUS_PER_LVL,
+  ENERGY_COST,
   EXP_COST,
-  MULT_BONUS_PER_CIRCLE,
+  MAX_ADD,
+  MAX_EXP,
+  MAX_MULT,
   MULT_COST,
   PERM_DISCOUNT_COST,
   PERM_MULT_BONUS,
   PERM_MULT_COST,
   PERM_POWER_BONUS,
   PERM_POWER_COST,
-  POWER_BONUS_PER_LVL,
-  POWER_COST,
   REBIRTH_GAIN,
   REBIRTH_THRESHOLD,
+  REROLL_COST_ADD,
+  REROLL_COST_EXP,
+  REROLL_COST_MULT,
 } from "@/constants/game";
 
-export type CircleType = "normal" | "multiplier" | "exponential";
+export type CircleType = "add" | "mult" | "exp";
 
 export type CircleNode = {
   id: string;
   type: CircleType;
-  x: number;
-  y: number;
+  value: number;
+  x?: number;
+  y?: number;
+  reRollCount: number;
 };
 
 export type GameState = {
   points: number;
   totalEarnedThisRun: number;
   totalLifetime: number;
-  powerLevel: number;
-  multiplierCount: number;
-  exponentialCount: number;
+  energyLevel: number;
+  circles: CircleNode[];
   circlePoints: number;
   permPower: number;
   permMult: number;
@@ -50,13 +55,25 @@ export type GameState = {
   rebirthCount: number;
 };
 
+let idCounter = 0;
+function newId(prefix: string): string {
+  idCounter += 1;
+  return `${prefix}-${Date.now().toString(36)}-${idCounter.toString(36)}`;
+}
+
+function makeStartingCircles(): CircleNode[] {
+  return [
+    { id: newId("add"), type: "add", value: 8, reRollCount: 0 },
+    { id: newId("mult"), type: "mult", value: 2, reRollCount: 0 },
+  ];
+}
+
 const initial: GameState = {
   points: 0,
   totalEarnedThisRun: 0,
   totalLifetime: 0,
-  powerLevel: 0,
-  multiplierCount: 0,
-  exponentialCount: 0,
+  energyLevel: 0,
+  circles: makeStartingCircles(),
   circlePoints: 0,
   permPower: 0,
   permMult: 0,
@@ -64,12 +81,13 @@ const initial: GameState = {
   rebirthCount: 0,
 };
 
-const STORAGE_KEY = "@circle-link/state-v1";
+const STORAGE_KEY = "@circle-link/state-v2";
 
 export type Costs = {
-  power: number;
-  multiplier: number | null;
-  exponential: number | null;
+  energy: number;
+  add: number | null;
+  mult: number | null;
+  exp: number | null;
   permPower: number | null;
   permMult: number | null;
   permDiscount: number | null;
@@ -81,11 +99,13 @@ type Ctx = {
   state: GameState;
   costs: Costs;
   applyDiscount: (cost: number) => number;
-  addPoints: (n: number) => void;
-  computeRate: (chain: CircleNode[]) => number;
-  buyPower: () => boolean;
-  buyMultiplierCircle: () => boolean;
-  buyExponentialCircle: () => boolean;
+  reRollCostFor: (circle: CircleNode) => number;
+  computeRelease: (chain: CircleNode[]) => number;
+  releaseChain: (chain: CircleNode[]) => number;
+  buyEnergy: () => boolean;
+  addCircle: (type: CircleType) => boolean;
+  reRollCircle: (id: string) => boolean;
+  moveCircle: (id: string, x: number, y: number) => void;
   buyPermPower: () => boolean;
   buyPermMult: () => boolean;
   buyPermDiscount: () => boolean;
@@ -96,6 +116,8 @@ type Ctx = {
 };
 
 const GameContext = createContext<Ctx | null>(null);
+
+const randVal = (): number => Math.floor(Math.random() * 10) + 1;
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState>(initial);
@@ -109,6 +131,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<GameState>;
+          if (
+            !parsed.circles ||
+            !Array.isArray(parsed.circles) ||
+            parsed.circles.length === 0
+          ) {
+            parsed.circles = makeStartingCircles();
+          }
           setState({ ...initial, ...parsed });
         }
       } catch {
@@ -132,79 +161,139 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const addPoints = useCallback((n: number) => {
-    if (n <= 0) return;
-    setState((s) => ({
-      ...s,
-      points: s.points + n,
-      totalEarnedThisRun: s.totalEarnedThisRun + n,
-      totalLifetime: s.totalLifetime + n,
-    }));
+  const reRollCostFor = useCallback((circle: CircleNode): number => {
+    const base =
+      circle.type === "add"
+        ? REROLL_COST_ADD(circle.reRollCount)
+        : circle.type === "mult"
+          ? REROLL_COST_MULT(circle.reRollCount)
+          : REROLL_COST_EXP(circle.reRollCount);
+    return Math.ceil(
+      base * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL),
+    );
   }, []);
 
-  const computeRate = useCallback((chain: CircleNode[]) => {
+  const computeRelease = useCallback((chain: CircleNode[]): number => {
     if (chain.length < 2) return 0;
     const s = stateRef.current;
-    const len = chain.length;
-    const multCount = chain.filter((c) => c.type === "multiplier").length;
-    const expCount = chain.filter((c) => c.type === "exponential").length;
-    const base =
-      len *
-      BASE_RATE_PER_CIRCLE *
-      (1 + s.powerLevel * POWER_BONUS_PER_LVL) *
-      (1 + s.permPower * PERM_POWER_BONUS);
-    const mult =
-      (1 + multCount * MULT_BONUS_PER_CIRCLE) *
-      (1 + s.permMult * PERM_MULT_BONUS);
-    const exp = Math.pow(EXP_BASE, expCount);
-    return base * mult * exp;
+    const adds = chain.filter((c) => c.type === "add");
+    const mults = chain.filter((c) => c.type === "mult");
+    const exps = chain.filter((c) => c.type === "exp");
+
+    let base = adds.reduce((sum, c) => sum + c.value, 0);
+    if (base === 0) base = chain.length;
+
+    let result = base;
+    for (const c of mults) {
+      result *= c.value * (1 + s.permMult * PERM_MULT_BONUS);
+    }
+    for (const c of exps) {
+      result = Math.pow(result, 1 + c.value / 10);
+    }
+
+    result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
+    result *= 1 + s.permPower * PERM_POWER_BONUS;
+    return Math.floor(result);
   }, []);
 
-  const buyPower = useCallback(() => {
+  const releaseChain = useCallback(
+    (chain: CircleNode[]): number => {
+      const earned = computeRelease(chain);
+      if (earned > 0) {
+        setState((s) => ({
+          ...s,
+          points: s.points + earned,
+          totalEarnedThisRun: s.totalEarnedThisRun + earned,
+          totalLifetime: s.totalLifetime + earned,
+        }));
+      }
+      return earned;
+    },
+    [computeRelease],
+  );
+
+  const buyEnergy = useCallback(() => {
     let ok = false;
     setState((s) => {
       const cost = Math.ceil(
-        POWER_COST(s.powerLevel) * (1 - s.permDiscount * DISCOUNT_PER_LVL),
+        ENERGY_COST(s.energyLevel) * (1 - s.permDiscount * DISCOUNT_PER_LVL),
       );
       if (s.points < cost) return s;
       ok = true;
-      return { ...s, points: s.points - cost, powerLevel: s.powerLevel + 1 };
+      return { ...s, points: s.points - cost, energyLevel: s.energyLevel + 1 };
     });
     return ok;
   }, []);
 
-  const buyMultiplierCircle = useCallback(() => {
+  const addCircle = useCallback((type: CircleType) => {
     let ok = false;
     setState((s) => {
-      const raw = MULT_COST(s.multiplierCount);
-      if (raw === null) return s;
-      const cost = Math.ceil(raw * (1 - s.permDiscount * DISCOUNT_PER_LVL));
+      const count = s.circles.filter((c) => c.type === type).length;
+      const max = type === "add" ? MAX_ADD : type === "mult" ? MAX_MULT : MAX_EXP;
+      if (count >= max) return s;
+      const rawCost =
+        type === "add"
+          ? ADD_COST(count)
+          : type === "mult"
+            ? MULT_COST(count)
+            : EXP_COST(count);
+      const cost = Math.ceil(rawCost * (1 - s.permDiscount * DISCOUNT_PER_LVL));
       if (s.points < cost) return s;
       ok = true;
       return {
         ...s,
         points: s.points - cost,
-        multiplierCount: s.multiplierCount + 1,
+        circles: [
+          ...s.circles,
+          {
+            id: newId(type),
+            type,
+            value: randVal(),
+            reRollCount: 0,
+          },
+        ],
       };
     });
     return ok;
   }, []);
 
-  const buyExponentialCircle = useCallback(() => {
+  const reRollCircle = useCallback((id: string) => {
     let ok = false;
     setState((s) => {
-      const raw = EXP_COST(s.exponentialCount);
-      if (raw === null) return s;
-      const cost = Math.ceil(raw * (1 - s.permDiscount * DISCOUNT_PER_LVL));
+      const circle = s.circles.find((c) => c.id === id);
+      if (!circle) return s;
+      const rawCost =
+        circle.type === "add"
+          ? REROLL_COST_ADD(circle.reRollCount)
+          : circle.type === "mult"
+            ? REROLL_COST_MULT(circle.reRollCount)
+            : REROLL_COST_EXP(circle.reRollCount);
+      const cost = Math.ceil(rawCost * (1 - s.permDiscount * DISCOUNT_PER_LVL));
       if (s.points < cost) return s;
       ok = true;
       return {
         ...s,
         points: s.points - cost,
-        exponentialCount: s.exponentialCount + 1,
+        circles: s.circles.map((c) =>
+          c.id === id
+            ? { ...c, value: randVal(), reRollCount: c.reRollCount + 1 }
+            : c,
+        ),
       };
     });
     return ok;
+  }, []);
+
+  const moveCircle = useCallback((id: string, x: number, y: number) => {
+    setState((s) => {
+      const target = s.circles.find((c) => c.id === id);
+      if (!target) return s;
+      if (target.x === x && target.y === y) return s;
+      return {
+        ...s,
+        circles: s.circles.map((c) => (c.id === id ? { ...c, x, y } : c)),
+      };
+    });
   }, []);
 
   const buyPermPower = useCallback(() => {
@@ -267,9 +356,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         ...s,
         points: 0,
         totalEarnedThisRun: 0,
-        powerLevel: 0,
-        multiplierCount: 0,
-        exponentialCount: 0,
+        energyLevel: 0,
+        circles: makeStartingCircles(),
         circlePoints: s.circlePoints + gain,
         rebirthCount: s.rebirthCount + 1,
       };
@@ -278,23 +366,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetAll = useCallback(async () => {
-    setState(initial);
+    setState({ ...initial, circles: makeStartingCircles() });
     await AsyncStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const costs = useMemo<Costs>(
-    () => ({
-      power: POWER_COST(state.powerLevel),
-      multiplier: MULT_COST(state.multiplierCount),
-      exponential: EXP_COST(state.exponentialCount),
+  const costs = useMemo<Costs>(() => {
+    const addCount = state.circles.filter((c) => c.type === "add").length;
+    const multCount = state.circles.filter((c) => c.type === "mult").length;
+    const expCount = state.circles.filter((c) => c.type === "exp").length;
+    return {
+      energy: ENERGY_COST(state.energyLevel),
+      add: addCount >= MAX_ADD ? null : ADD_COST(addCount),
+      mult: multCount >= MAX_MULT ? null : MULT_COST(multCount),
+      exp: expCount >= MAX_EXP ? null : EXP_COST(expCount),
       permPower: PERM_POWER_COST(state.permPower),
       permMult: PERM_MULT_COST(state.permMult),
       permDiscount: PERM_DISCOUNT_COST(state.permDiscount),
       rebirthThreshold: REBIRTH_THRESHOLD(state.rebirthCount),
       rebirthCpGain: REBIRTH_GAIN(state.totalEarnedThisRun),
-    }),
-    [state],
-  );
+    };
+  }, [state]);
 
   const canRebirth =
     state.totalEarnedThisRun >= costs.rebirthThreshold &&
@@ -304,11 +395,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     state,
     costs,
     applyDiscount,
-    addPoints,
-    computeRate,
-    buyPower,
-    buyMultiplierCircle,
-    buyExponentialCircle,
+    reRollCostFor,
+    computeRelease,
+    releaseChain,
+    buyEnergy,
+    addCircle,
+    reRollCircle,
+    moveCircle,
     buyPermPower,
     buyPermMult,
     buyPermDiscount,

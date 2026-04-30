@@ -26,7 +26,12 @@ function NativeTabLayout() {
         <Label>Shop</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="rebirth">
-        <Icon sf={{ default: "arrow.triangle.2.circlepath" }} />
+        <Icon
+          sf={{
+            default: "arrow.triangle.2.circlepath",
+            selected: "arrow.triangle.2.circlepath",
+          }}
+        />
         <Label>Rebirth</Label>
       </NativeTabs.Trigger>
     </NativeTabs>
