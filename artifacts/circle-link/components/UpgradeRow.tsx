@@ -11,6 +11,7 @@ import {
 
 import { useColors } from "@/hooks/useColors";
 import { formatNum } from "@/lib/format";
+import { useSound } from "@/lib/sound";
 
 type Props = {
   iconName: React.ComponentProps<typeof Feather>["name"];
@@ -23,7 +24,7 @@ type Props = {
   currency: "points" | "cp";
   affordable: boolean;
   maxed?: boolean;
-  onBuy: () => void;
+  onBuy: () => boolean | void;
 };
 
 export function UpgradeRow({
@@ -40,15 +41,30 @@ export function UpgradeRow({
   onBuy,
 }: Props) {
   const colors = useColors();
+  const sound = useSound();
   const accent = iconColor ?? colors.primary;
-  const disabled = maxed || costValue === null || !affordable;
+  const disabled = maxed || costValue === null;
 
   const handlePress = () => {
     if (disabled) return;
+    if (!affordable) {
+      // fail feedback
+      if (Platform.OS !== "web") {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Warning,
+        ).catch(() => {});
+      }
+      sound.play("buzz", 1.0);
+      return;
+    }
     if (Platform.OS !== "web") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
-    onBuy();
+    const result = onBuy();
+    // play success unless explicitly returned false
+    if (result !== false) {
+      sound.play("ding", 1.0);
+    }
   };
 
   return (
@@ -60,7 +76,7 @@ export function UpgradeRow({
         {
           backgroundColor: colors.card,
           borderColor: pressed && !disabled ? accent : colors.border,
-          opacity: disabled ? 0.55 : 1,
+          opacity: disabled ? 0.55 : affordable ? 1 : 0.8,
           transform: [{ scale: pressed && !disabled ? 0.98 : 1 }],
         },
       ]}

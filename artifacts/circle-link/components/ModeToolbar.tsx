@@ -5,22 +5,18 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
   View,
+  Text,
 } from "react-native";
 
 import type { Mode } from "@/components/GameBoard";
 import { useColors } from "@/hooks/useColors";
+import { useSound } from "@/lib/sound";
 
 type Props = {
   mode: Mode;
   onChangeMode: (mode: Mode) => void;
-};
-
-const tap = () => {
-  if (Platform.OS !== "web") {
-    Haptics.selectionAsync().catch(() => {});
-  }
+  onResetView?: () => void;
 };
 
 function ModeButton({
@@ -39,10 +35,7 @@ function ModeButton({
   const colors = useColors();
   return (
     <Pressable
-      onPress={() => {
-        tap();
-        onPress();
-      }}
+      onPress={onPress}
       style={({ pressed }) => [
         styles.btn,
         {
@@ -69,7 +62,15 @@ function ModeButton({
   );
 }
 
-export function ModeToolbar({ mode, onChangeMode }: Props) {
+export function ModeToolbar({ mode, onChangeMode, onResetView }: Props) {
+  const colors = useColors();
+  const sound = useSound();
+
+  const tap = (name: "tick" | "pop" = "tick") => {
+    if (Platform.OS !== "web") Haptics.selectionAsync().catch(() => {});
+    sound.play(name, 1.05);
+  };
+
   return (
     <View style={styles.row}>
       <ModeButton
@@ -77,15 +78,43 @@ export function ModeToolbar({ mode, onChangeMode }: Props) {
         label="Layout"
         iconName="move"
         accent="#0f766e"
-        onPress={() => onChangeMode(mode === "layout" ? "play" : "layout")}
+        onPress={() => {
+          tap("tick");
+          onChangeMode(mode === "layout" ? "play" : "layout");
+        }}
       />
       <ModeButton
         active={mode === "upgrade"}
         label="Upgrade"
         iconName="zap"
         accent="#9333ea"
-        onPress={() => onChangeMode(mode === "upgrade" ? "play" : "upgrade")}
+        onPress={() => {
+          tap("tick");
+          onChangeMode(mode === "upgrade" ? "play" : "upgrade");
+        }}
       />
+      {onResetView ? (
+        <Pressable
+          onPress={() => {
+            tap("pop");
+            onResetView();
+          }}
+          style={({ pressed }) => [
+            styles.iconBtn,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+        >
+          <Feather
+            name="maximize-2"
+            size={15}
+            color={colors.foreground}
+          />
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -94,6 +123,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     gap: 10,
+    alignItems: "center",
   },
   btn: {
     flexDirection: "row",
@@ -108,5 +138,14 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 13,
     letterSpacing: 0.3,
+  },
+  iconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 999,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: "auto",
   },
 });

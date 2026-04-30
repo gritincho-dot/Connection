@@ -42,3 +42,35 @@ export const DISCOUNT_PER_LVL = 0.1;
 export const MAX_ADD = 6;
 export const MAX_MULT = 4;
 export const MAX_EXP = 2;
+
+// New mechanics
+export const COMBO_WINDOW_MS = 5000;
+export const COMBO_BONUS_PER_STACK = 0.1;
+export const COMBO_MAX_STACKS = 10;
+
+export const CRIT_CHANCE = 0.08;
+export const CRIT_MULTIPLIER = 3;
+
+export const STREAK_THRESHOLD = 4;
+export const STREAK_BONUS_PER_EXTRA = 0.25;
+
+export type Achievement = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+export const ACHIEVEMENTS: Achievement[] = [
+  { id: "first100", label: "Spark", description: "Earn 100 points" },
+  { id: "first1k", label: "Flow", description: "Earn 1,000 points" },
+  { id: "first10k", label: "Cascade", description: "Earn 10,000 points" },
+  { id: "first100k", label: "Surge", description: "Earn 100,000 points" },
+  { id: "chain3", label: "Triad", description: "Chain 3 circles" },
+  { id: "chain4", label: "Quartet", description: "Chain 4 circles" },
+  { id: "chain5", label: "Quintet", description: "Chain 5 circles" },
+  { id: "chain6", label: "Hexa", description: "Chain 6 circles" },
+  { id: "combo5", label: "Combo Streak", description: "Reach a 5x combo" },
+  { id: "crit", label: "Lucky Strike", description: "Land a critical hit" },
+  { id: "rebirth1", label: "Reborn", description: "Rebirth for the first time" },
+  { id: "energy5", label: "Charged", description: "Reach Connection Energy 5" },
+];

@@ -16,6 +16,7 @@ const SUFFIXES = [
 export function formatNum(n: number): string {
   if (!isFinite(n)) return "∞";
   if (n < 0) return "-" + formatNum(-n);
+  if (n === 0) return "0";
   if (n < 1) return n.toFixed(2);
   if (n < 1000) return Math.floor(n * 10) / 10 < n ? n.toFixed(1) : n.toFixed(0);
 

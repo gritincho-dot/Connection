@@ -15,11 +15,24 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { GameProvider } from "@/context/GameContext";
+import { GameProvider, useGame } from "@/context/GameContext";
+import { SoundProvider } from "@/lib/sound";
+import { PALETTES } from "@/lib/theme";
 
 SplashScreen.preventAutoHideAsync();
 
 const queryClient = new QueryClient();
+
+function ThemedShell({ children }: { children: React.ReactNode }) {
+  const { state } = useGame();
+  const palette = PALETTES[state.settings.bgVariant];
+  return (
+    <SoundProvider enabled={state.settings.soundEnabled}>
+      <StatusBar style={palette.statusBarStyle} />
+      {children}
+    </SoundProvider>
+  );
+}
 
 function RootLayoutNav() {
   return (
@@ -49,11 +62,12 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <GestureHandlerRootView style={{ flex: 1, backgroundColor: "#f4eedc" }}>
+          <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
               <GameProvider>
-                <StatusBar style="dark" />
-                <RootLayoutNav />
+                <ThemedShell>
+                  <RootLayoutNav />
+                </ThemedShell>
               </GameProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>

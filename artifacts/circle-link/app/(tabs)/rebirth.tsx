@@ -13,12 +13,15 @@ import {
 
 import { StatsBar } from "@/components/StatsBar";
 import { UpgradeRow } from "@/components/UpgradeRow";
+import { ACHIEVEMENTS } from "@/constants/game";
 import { useGame } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
 import { formatNum } from "@/lib/format";
+import { useSound } from "@/lib/sound";
 
 export default function RebirthScreen() {
   const colors = useColors();
+  const sound = useSound();
   const {
     state,
     costs,
@@ -36,6 +39,7 @@ export default function RebirthScreen() {
         `Rebirth and gain ${costs.rebirthCpGain} circle points? Your run progress and shop upgrades will reset.`,
       );
       if (ok) {
+        sound.play("chime", 1.0);
         rebirth();
       }
       return;
@@ -52,12 +56,17 @@ export default function RebirthScreen() {
             Haptics.notificationAsync(
               Haptics.NotificationFeedbackType.Success,
             ).catch(() => {});
+            sound.play("chime", 1.0);
             rebirth();
           },
         },
       ],
     );
   };
+
+  const earnedAchievements = ACHIEVEMENTS.filter((a) =>
+    state.achievements.includes(a.id),
+  );
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -207,39 +216,112 @@ export default function RebirthScreen() {
           />
         </View>
 
-        <View style={styles.statsGrid}>
-          <View
-            style={[
-              styles.statCard,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            <Text
-              style={[styles.statLabel, { color: colors.mutedForeground }]}
-            >
-              Rebirths
-            </Text>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>
-              {state.rebirthCount}
-            </Text>
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            Stats
+          </Text>
+          <View style={styles.statsGrid}>
+            <StatCard label="Rebirths" value={String(state.rebirthCount)} />
+            <StatCard label="Lifetime" value={formatNum(state.totalLifetime)} />
           </View>
+          <View style={styles.statsGrid}>
+            <StatCard
+              label="Best chain"
+              value={String(state.bestChainLength)}
+            />
+            <StatCard
+              label="Best release"
+              value={formatNum(state.bestSingleEarning)}
+            />
+          </View>
+          <View style={styles.statsGrid}>
+            <StatCard
+              label="Releases"
+              value={formatNum(state.totalReleases)}
+            />
+            <StatCard
+              label="Achievements"
+              value={`${earnedAchievements.length} / ${ACHIEVEMENTS.length}`}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            Achievements
+          </Text>
           <View
             style={[
-              styles.statCard,
+              styles.achievementsCard,
               { backgroundColor: colors.card, borderColor: colors.border },
             ]}
           >
-            <Text
-              style={[styles.statLabel, { color: colors.mutedForeground }]}
-            >
-              Lifetime
-            </Text>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>
-              {formatNum(state.totalLifetime)}
-            </Text>
+            {ACHIEVEMENTS.map((a) => {
+              const earned = state.achievements.includes(a.id);
+              return (
+                <View key={a.id} style={styles.achievementRow}>
+                  <Feather
+                    name={earned ? "award" : "circle"}
+                    size={16}
+                    color={earned ? "#facc15" : colors.mutedForeground}
+                  />
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.achievementLabel,
+                        {
+                          color: earned
+                            ? colors.foreground
+                            : colors.mutedForeground,
+                        },
+                      ]}
+                    >
+                      {a.label}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.achievementSub,
+                        { color: colors.mutedForeground },
+                      ]}
+                    >
+                      {a.description}
+                    </Text>
+                  </View>
+                  {earned ? (
+                    <Text
+                      style={[
+                        styles.earnedTag,
+                        { color: "#16a34a" },
+                      ]}
+                    >
+                      Earned
+                    </Text>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         </View>
       </ScrollView>
+    </View>
+  );
+}
+
+function StatCard({ label, value }: { label: string; value: string }) {
+  const colors = useColors();
+  return (
+    <View
+      style={[
+        styles.statCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+    >
+      <Text style={[styles.statLabel, { color: colors.mutedForeground }]}>
+        {label}
+      </Text>
+      <Text style={[styles.statValue, { color: colors.foreground }]}>
+        {value}
+      </Text>
     </View>
   );
 }
@@ -351,5 +433,31 @@ const styles = StyleSheet.create({
   statValue: {
     fontFamily: "Inter_700Bold",
     fontSize: 20,
+  },
+  achievementsCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 12,
+    gap: 12,
+  },
+  achievementRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  achievementLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+  },
+  achievementSub: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    marginTop: 1,
+  },
+  earnedTag: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 10,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
   },
 });

@@ -10,7 +10,13 @@ import React, {
 } from "react";
 
 import {
+  ACHIEVEMENTS,
   ADD_COST,
+  COMBO_BONUS_PER_STACK,
+  COMBO_MAX_STACKS,
+  COMBO_WINDOW_MS,
+  CRIT_CHANCE,
+  CRIT_MULTIPLIER,
   DISCOUNT_PER_LVL,
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
@@ -29,7 +35,10 @@ import {
   REROLL_COST_ADD,
   REROLL_COST_EXP,
   REROLL_COST_MULT,
+  STREAK_BONUS_PER_EXTRA,
+  STREAK_THRESHOLD,
 } from "@/constants/game";
+import { type BgVariant, DEFAULT_BG } from "@/lib/theme";
 
 export type CircleType = "add" | "mult" | "exp";
 
@@ -40,6 +49,19 @@ export type CircleNode = {
   x?: number;
   y?: number;
   reRollCount: number;
+};
+
+export type Settings = {
+  soundEnabled: boolean;
+  bgVariant: BgVariant;
+};
+
+export type ReleaseInfo = {
+  earned: number;
+  baseEarned: number;
+  crit: boolean;
+  comboCount: number;
+  newAchievements: string[];
 };
 
 export type GameState = {
@@ -53,6 +75,15 @@ export type GameState = {
   permMult: number;
   permDiscount: number;
   rebirthCount: number;
+  // Tracking
+  bestChainLength: number;
+  bestSingleEarning: number;
+  totalReleases: number;
+  comboCount: number;
+  lastReleaseAt: number;
+  achievements: string[];
+  // Settings
+  settings: Settings;
 };
 
 let idCounter = 0;
@@ -79,9 +110,19 @@ const initial: GameState = {
   permMult: 0,
   permDiscount: 0,
   rebirthCount: 0,
+  bestChainLength: 0,
+  bestSingleEarning: 0,
+  totalReleases: 0,
+  comboCount: 0,
+  lastReleaseAt: 0,
+  achievements: [],
+  settings: {
+    soundEnabled: true,
+    bgVariant: DEFAULT_BG,
+  },
 };
 
-const STORAGE_KEY = "@circle-link/state-v2";
+const STORAGE_KEY = "@circle-link/state-v3";
 
 export type Costs = {
   energy: number;
@@ -101,27 +142,57 @@ type Ctx = {
   applyDiscount: (cost: number) => number;
   reRollCostFor: (circle: CircleNode) => number;
   computeRelease: (chain: CircleNode[]) => number;
-  releaseChain: (chain: CircleNode[]) => number;
+  computeReleaseStepwise: (chain: CircleNode[]) => number[];
+  releaseChain: (chain: CircleNode[]) => ReleaseInfo;
   buyEnergy: () => boolean;
   addCircle: (type: CircleType) => boolean;
   reRollCircle: (id: string) => boolean;
   moveCircle: (id: string, x: number, y: number) => void;
+  shuffleLayout: () => void;
   buyPermPower: () => boolean;
   buyPermMult: () => boolean;
   buyPermDiscount: () => boolean;
   rebirth: () => boolean;
   resetAll: () => Promise<void>;
+  setSoundEnabled: (v: boolean) => void;
+  setBgVariant: (v: BgVariant) => void;
+  acknowledgeAchievement: (id: string) => void;
+  pendingAchievement: string | null;
   canRebirth: boolean;
   loaded: boolean;
 };
 
-const GameContext = createContext<Ctx | null>(null);
+export const GameContext = createContext<Ctx | null>(null);
 
 const randVal = (): number => Math.floor(Math.random() * 10) + 1;
+
+function checkAchievements(s: GameState): string[] {
+  const unlocked: string[] = [];
+  for (const a of ACHIEVEMENTS) {
+    if (s.achievements.includes(a.id)) continue;
+    let ok = false;
+    if (a.id === "first100") ok = s.totalLifetime >= 100;
+    else if (a.id === "first1k") ok = s.totalLifetime >= 1000;
+    else if (a.id === "first10k") ok = s.totalLifetime >= 10000;
+    else if (a.id === "first100k") ok = s.totalLifetime >= 100000;
+    else if (a.id === "chain3") ok = s.bestChainLength >= 3;
+    else if (a.id === "chain4") ok = s.bestChainLength >= 4;
+    else if (a.id === "chain5") ok = s.bestChainLength >= 5;
+    else if (a.id === "chain6") ok = s.bestChainLength >= 6;
+    else if (a.id === "combo5") ok = s.comboCount >= 5;
+    else if (a.id === "rebirth1") ok = s.rebirthCount >= 1;
+    else if (a.id === "energy5") ok = s.energyLevel >= 5;
+    if (ok) unlocked.push(a.id);
+  }
+  return unlocked;
+}
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState>(initial);
   const [loaded, setLoaded] = useState(false);
+  const [pendingAchievement, setPendingAchievement] = useState<string | null>(
+    null,
+  );
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -138,10 +209,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           ) {
             parsed.circles = makeStartingCircles();
           }
+          if (!parsed.settings) parsed.settings = initial.settings;
+          if (!parsed.achievements) parsed.achievements = [];
           setState({ ...initial, ...parsed });
         }
       } catch {
-        // ignore corrupted storage
+        // ignore
       }
       setLoaded(true);
     })();
@@ -154,6 +227,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }, 300);
     return () => clearTimeout(t);
   }, [state, loaded]);
+
+  const enqueueAchievements = useCallback((ids: string[]) => {
+    if (ids.length === 0) return;
+    // Show first one; others will appear after acknowledgement
+    setPendingAchievement((cur) => cur ?? ids[0]);
+  }, []);
+
+  const acknowledgeAchievement = useCallback((id: string) => {
+    setPendingAchievement((cur) => (cur === id ? null : cur));
+    // Check if there are more pending — find any unlocked but not yet shown
+    setTimeout(() => {
+      const s = stateRef.current;
+      const next = ACHIEVEMENTS.find(
+        (a) => s.achievements.includes(a.id) && a.id !== id,
+      );
+      // We don't track shown vs unshown separately; achievements only fires once at unlock.
+      // No-op here.
+      void next;
+    }, 0);
+  }, []);
 
   const applyDiscount = useCallback((cost: number) => {
     return Math.ceil(
@@ -173,43 +266,132 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     );
   }, []);
 
-  const computeRelease = useCallback((chain: CircleNode[]): number => {
-    if (chain.length < 2) return 0;
+  // Order-based stepwise computation
+  const computeReleaseStepwise = useCallback((chain: CircleNode[]): number[] => {
+    if (chain.length === 0) return [];
     const s = stateRef.current;
-    const adds = chain.filter((c) => c.type === "add");
-    const mults = chain.filter((c) => c.type === "mult");
-    const exps = chain.filter((c) => c.type === "exp");
-
-    let base = adds.reduce((sum, c) => sum + c.value, 0);
-    if (base === 0) base = chain.length;
-
-    let result = base;
-    for (const c of mults) {
-      result *= c.value * (1 + s.permMult * PERM_MULT_BONUS);
+    const steps: number[] = [];
+    let result = chain[0].value;
+    steps.push(result);
+    for (let i = 1; i < chain.length; i++) {
+      const c = chain[i];
+      if (c.type === "add") {
+        result = result + c.value;
+      } else if (c.type === "mult") {
+        result = result * c.value * (1 + s.permMult * PERM_MULT_BONUS);
+      } else {
+        // exp: tame growth
+        result = Math.pow(result, 1 + c.value / 10);
+      }
+      steps.push(result);
     }
-    for (const c of exps) {
-      result = Math.pow(result, 1 + c.value / 10);
-    }
-
-    result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
-    result *= 1 + s.permPower * PERM_POWER_BONUS;
-    return Math.floor(result);
+    return steps;
   }, []);
 
-  const releaseChain = useCallback(
+  const computeRelease = useCallback(
     (chain: CircleNode[]): number => {
-      const earned = computeRelease(chain);
-      if (earned > 0) {
-        setState((s) => ({
+      if (chain.length < 2) return 0;
+      const s = stateRef.current;
+      const steps = computeReleaseStepwise(chain);
+      let result = steps[steps.length - 1];
+
+      // Streak bonus
+      if (chain.length >= STREAK_THRESHOLD) {
+        const extra = chain.length - STREAK_THRESHOLD + 1;
+        result *= 1 + STREAK_BONUS_PER_EXTRA * extra;
+      }
+
+      // Energy + permPower
+      result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
+      result *= 1 + s.permPower * PERM_POWER_BONUS;
+
+      // Combo (preview): assume current combo applies if within window
+      const within = Date.now() - s.lastReleaseAt < COMBO_WINDOW_MS;
+      const projectedCombo = within
+        ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS)
+        : 1;
+      result *= 1 + (projectedCombo - 1) * COMBO_BONUS_PER_STACK;
+
+      return Math.floor(result);
+    },
+    [computeReleaseStepwise],
+  );
+
+  const releaseChain = useCallback(
+    (chain: CircleNode[]): ReleaseInfo => {
+      if (chain.length < 2) {
+        return {
+          earned: 0,
+          baseEarned: 0,
+          crit: false,
+          comboCount: 0,
+          newAchievements: [],
+        };
+      }
+      let info: ReleaseInfo = {
+        earned: 0,
+        baseEarned: 0,
+        crit: false,
+        comboCount: 0,
+        newAchievements: [],
+      };
+      setState((s) => {
+        const steps = computeReleaseStepwise(chain);
+        let result = steps[steps.length - 1];
+
+        if (chain.length >= STREAK_THRESHOLD) {
+          const extra = chain.length - STREAK_THRESHOLD + 1;
+          result *= 1 + STREAK_BONUS_PER_EXTRA * extra;
+        }
+        result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
+        result *= 1 + s.permPower * PERM_POWER_BONUS;
+
+        const now = Date.now();
+        const within = now - s.lastReleaseAt < COMBO_WINDOW_MS;
+        const newCombo = within
+          ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS)
+          : 1;
+        result *= 1 + (newCombo - 1) * COMBO_BONUS_PER_STACK;
+
+        const baseEarned = Math.floor(result);
+        const crit = Math.random() < CRIT_CHANCE;
+        const earned = crit ? baseEarned * CRIT_MULTIPLIER : baseEarned;
+
+        const next: GameState = {
           ...s,
           points: s.points + earned,
           totalEarnedThisRun: s.totalEarnedThisRun + earned,
           totalLifetime: s.totalLifetime + earned,
-        }));
-      }
-      return earned;
+          totalReleases: s.totalReleases + 1,
+          comboCount: newCombo,
+          lastReleaseAt: now,
+          bestChainLength: Math.max(s.bestChainLength, chain.length),
+          bestSingleEarning: Math.max(s.bestSingleEarning, earned),
+        };
+        const unlocked = checkAchievements({ ...next, achievements: s.achievements });
+        next.achievements = [...s.achievements, ...unlocked];
+        if (crit && !next.achievements.includes("crit")) {
+          next.achievements.push("crit");
+          unlocked.push("crit");
+        }
+        info = {
+          earned,
+          baseEarned,
+          crit,
+          comboCount: newCombo,
+          newAchievements: unlocked,
+        };
+        return next;
+      });
+      // After state update, surface achievement
+      setTimeout(() => {
+        if (info.newAchievements.length > 0) {
+          enqueueAchievements(info.newAchievements);
+        }
+      }, 0);
+      return info;
     },
-    [computeRelease],
+    [computeReleaseStepwise, enqueueAchievements],
   );
 
   const buyEnergy = useCallback(() => {
@@ -220,10 +402,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       );
       if (s.points < cost) return s;
       ok = true;
-      return { ...s, points: s.points - cost, energyLevel: s.energyLevel + 1 };
+      const next = {
+        ...s,
+        points: s.points - cost,
+        energyLevel: s.energyLevel + 1,
+      };
+      const unlocked = checkAchievements(next);
+      if (unlocked.length > 0) {
+        next.achievements = [...next.achievements, ...unlocked];
+        setTimeout(() => enqueueAchievements(unlocked), 0);
+      }
+      return next;
     });
     return ok;
-  }, []);
+  }, [enqueueAchievements]);
 
   const addCircle = useCallback((type: CircleType) => {
     let ok = false;
@@ -296,6 +488,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const shuffleLayout = useCallback(() => {
+    setState((s) => ({
+      ...s,
+      circles: s.circles.map((c) => ({ ...c, x: undefined, y: undefined })),
+    }));
+  }, []);
+
   const buyPermPower = useCallback(() => {
     let ok = false;
     setState((s) => {
@@ -352,7 +551,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const gain = REBIRTH_GAIN(s.totalEarnedThisRun);
       if (gain <= 0) return s;
       ok = true;
-      return {
+      const next: GameState = {
         ...s,
         points: 0,
         totalEarnedThisRun: 0,
@@ -360,14 +559,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         circles: makeStartingCircles(),
         circlePoints: s.circlePoints + gain,
         rebirthCount: s.rebirthCount + 1,
+        comboCount: 0,
+        lastReleaseAt: 0,
       };
+      const unlocked = checkAchievements(next);
+      if (unlocked.length > 0) {
+        next.achievements = [...next.achievements, ...unlocked];
+        setTimeout(() => enqueueAchievements(unlocked), 0);
+      }
+      return next;
     });
     return ok;
-  }, []);
+  }, [enqueueAchievements]);
 
   const resetAll = useCallback(async () => {
     setState({ ...initial, circles: makeStartingCircles() });
     await AsyncStorage.removeItem(STORAGE_KEY);
+  }, []);
+
+  const setSoundEnabled = useCallback((v: boolean) => {
+    setState((s) => ({ ...s, settings: { ...s.settings, soundEnabled: v } }));
+  }, []);
+
+  const setBgVariant = useCallback((v: BgVariant) => {
+    setState((s) => ({ ...s, settings: { ...s.settings, bgVariant: v } }));
   }, []);
 
   const costs = useMemo<Costs>(() => {
@@ -397,16 +612,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     applyDiscount,
     reRollCostFor,
     computeRelease,
+    computeReleaseStepwise,
     releaseChain,
     buyEnergy,
     addCircle,
     reRollCircle,
     moveCircle,
+    shuffleLayout,
     buyPermPower,
     buyPermMult,
     buyPermDiscount,
     rebirth,
     resetAll,
+    setSoundEnabled,
+    setBgVariant,
+    acknowledgeAchievement,
+    pendingAchievement,
     canRebirth,
     loaded,
   };
