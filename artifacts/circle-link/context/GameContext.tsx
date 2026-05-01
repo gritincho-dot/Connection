@@ -14,7 +14,6 @@ import {
   ADD_COST,
   CHAIN_REACTION_BONUS,
   CHAIN_REACTION_CHANCE,
-  CIRCLE_TTL_MS,
   CLEANSE_COST_ADD,
   CLEANSE_COST_EXP,
   CLEANSE_COST_MULT,
@@ -28,7 +27,6 @@ import {
   DISCOUNT_PER_LVL,
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
-  EXPIRE_VALUE_FRACTION,
   EXP_AOE_BONUS,
   EXP_COST,
   EXP_DECAY_MS,
@@ -39,7 +37,6 @@ import {
   MAX_TOTAL_CIRCLES,
   MEGA_BONUS,
   MEGA_THRESHOLD,
-  MULT_EXHAUST_MS,
   MULT_DECAY_MS,
   MULT_COST,
   PASSIVE_INCOME_RATE,
@@ -71,16 +68,12 @@ export type CircleNode = {
   x?: number;
   y?: number;
   reRollCount: number;
-  // null = permanent (starting circles), timestamp = hard expiry
-  expiresAt: number | null;
   // whether this circle spawned corrupted
   corrupted: boolean;
-  // timestamp when this circle's decay/warmup started (null = permanent)
+  // timestamp when this circle's decay/warmup started (null = permanent starting circle)
   chargedAt: number | null;
   // timestamp when this circle last participated in a chain release (for primed detection)
   lastUsedAt: number | null;
-  // timestamp until which this mult circle is warming up (output reduced, not blocked)
-  exhaustedUntil: number | null;
 };
 
 // ── Exported circle-state helpers ──────────────────────────────────────────
@@ -94,14 +87,6 @@ export function effectiveValue(c: CircleNode, now: number): number {
   const elapsed = Math.max(0, now - c.chargedAt);
   const fraction = Math.max(0, 1 - elapsed / decayMs);
   return Math.max(minVal, Math.ceil(c.value * fraction));
-}
-
-/** Warm-up factor for exhausted mult circles: 0.5 (just used) → 1.0 (recovered). */
-export function exhaustionFactor(c: CircleNode, now: number): number {
-  if (c.type !== "mult" || c.exhaustedUntil === null || now >= c.exhaustedUntil)
-    return 1;
-  const remaining = c.exhaustedUntil - now;
-  return 0.5 + 0.5 * (1 - remaining / MULT_EXHAUST_MS);
 }
 
 /** True when a mult circle has been idle long enough to be primed for a bonus. */
@@ -166,22 +151,18 @@ function makeStartingCircles(): CircleNode[] {
       type: "add",
       value: 5,
       reRollCount: 0,
-      expiresAt: null,
       corrupted: false,
       chargedAt: null,
       lastUsedAt: null,
-      exhaustedUntil: null,
     },
     {
       id: newId("mult"),
       type: "mult",
       value: 2,
       reRollCount: 0,
-      expiresAt: null,
       corrupted: false,
       chargedAt: null,
       lastUsedAt: null,
-      exhaustedUntil: null,
     },
   ];
 }
@@ -303,15 +284,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           if (!parsed.circles || !Array.isArray(parsed.circles) || parsed.circles.length === 0) {
             parsed.circles = makeStartingCircles();
           } else {
-            // Migrate old circles that lack new fields
-            parsed.circles = parsed.circles.map((c: CircleNode) => ({
-              ...c,
-              expiresAt: c.expiresAt ?? null,
-              corrupted: c.corrupted ?? false,
-              chargedAt: c.chargedAt ?? null,
-              lastUsedAt: c.lastUsedAt ?? null,
-              exhaustedUntil: c.exhaustedUntil ?? null,
-            }));
+            // Migrate old circles — strip removed fields, ensure new fields exist
+            parsed.circles = parsed.circles.map((c: CircleNode & { expiresAt?: unknown; exhaustedUntil?: unknown }) => {
+              const { expiresAt: _e, exhaustedUntil: _x, ...rest } = c as CircleNode & { expiresAt?: unknown; exhaustedUntil?: unknown };
+              return {
+                ...rest,
+                corrupted: rest.corrupted ?? false,
+                chargedAt: rest.chargedAt ?? null,
+                lastUsedAt: rest.lastUsedAt ?? null,
+              };
+            });
           }
           if (!parsed.settings) parsed.settings = initial.settings;
           if (!parsed.achievements) parsed.achievements = [];
@@ -333,58 +315,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [state, loaded]);
 
-  // ── Expiry + passive income interval ────────────────────────────────────────
-  // Every second: remove expired/fully-decayed circles (awarding 50% value) and grant passive income
+  // ── Passive income interval ──────────────────────────────────────────────────
+  // Every second: grant passive income based on total circle values
   useEffect(() => {
     if (!loaded) return;
     const id = setInterval(() => {
-      const now = Date.now();
       setState((s) => {
-        // Add circles: hard expiry
-        const addExpired = s.circles.filter(
-          (c) => c.type === "add" && c.expiresAt !== null && now >= c.expiresAt,
-        );
-        // Mult/exp circles: decay-based removal (fully decayed = chargedAt + decayMs elapsed)
-        const decayExpired = s.circles.filter((c) => {
-          if (c.chargedAt === null) return false;
-          if (c.type === "mult") return now - c.chargedAt >= MULT_DECAY_MS;
-          if (c.type === "exp") return now - c.chargedAt >= EXP_DECAY_MS;
-          return false;
-        });
-
-        const allExpired = [...addExpired, ...decayExpired];
-        if (allExpired.length === 0) {
-          // Passive income only
-          const totalVal = s.circles.reduce((sum, c) => sum + c.value, 0);
-          const passive = Math.floor(totalVal * PASSIVE_INCOME_RATE);
-          if (passive === 0) return s;
-          return {
-            ...s,
-            points: s.points + passive,
-            totalEarnedThisRun: s.totalEarnedThisRun + passive,
-            totalLifetime: s.totalLifetime + passive,
-          };
-        }
-
-        // 50% of original value as payout
-        const expiryPayout = allExpired.reduce(
-          (sum, c) => sum + Math.floor(c.value * EXPIRE_VALUE_FRACTION),
-          0,
-        );
-        const expiredIds = new Set(allExpired.map((c) => c.id));
-        const remaining = s.circles.filter((c) => !expiredIds.has(c.id));
-
-        // Passive income on remaining circles
-        const totalVal = remaining.reduce((sum, c) => sum + c.value, 0);
+        const totalVal = s.circles.reduce((sum, c) => sum + c.value, 0);
         const passive = Math.floor(totalVal * PASSIVE_INCOME_RATE);
-
-        const gained = expiryPayout + passive;
+        if (passive === 0) return s;
         return {
           ...s,
-          points: s.points + gained,
-          totalEarnedThisRun: s.totalEarnedThisRun + gained,
-          totalLifetime: s.totalLifetime + gained,
-          circles: remaining,
+          points: s.points + passive,
+          totalEarnedThisRun: s.totalEarnedThisRun + passive,
+          totalLifetime: s.totalLifetime + passive,
         };
       });
     }, 1000);
@@ -445,9 +389,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (c.type === "add") {
         result = result + ev;
       } else if (c.type === "mult") {
-        const ef = exhaustionFactor(c, now);
         const prime = isPrimed(c, now) ? (1 + PRIME_BONUS) : 1;
-        result = result * ev * ef * prime * (1 + s.permMult * PERM_MULT_BONUS);
+        result = result * ev * prime * (1 + s.permMult * PERM_MULT_BONUS);
       } else {
         result = Math.pow(result, 1 + ev / EXP_VALUE_DIVISOR);
       }
@@ -560,21 +503,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           ? Math.floor(earned * CHAIN_REACTION_BONUS) : 0;
         if (chainReactionTriggered) earned += chainReactionBonus;
 
-        // Exp AOE: destroy non-permanent add circles in the chain
+        // Exp AOE: destroy all add circles in the chain
         const chainAddIds = new Set(
-          chain.filter((c) => c.type === "add" && c.expiresAt !== null).map((c) => c.id),
+          chain.filter((c) => c.type === "add").map((c) => c.id),
         );
         const circlesDestroyed = hasExp ? chainAddIds.size : 0;
 
-        // Mult circles: exhaust (warm-up period) + record last use
+        // Mult circles: record last use time (for primed detection)
         const multIdsInChain = new Set(chain.filter((c) => c.type === "mult").map((c) => c.id));
 
-        // Circle cascade: visual wave recorded by returning chain order indices
         const updatedCircles = s.circles
           .filter((c) => !(hasExp && chainAddIds.has(c.id)))
           .map((c) => {
             if (multIdsInChain.has(c.id))
-              return { ...c, exhaustedUntil: now + MULT_EXHAUST_MS, lastUsedAt: now };
+              return { ...c, lastUsedAt: now };
             return c;
           });
 
@@ -689,14 +631,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       ok = true;
       const corrupted = Math.random() < CORRUPT_CHANCE;
       const now = Date.now();
-      // Add circles: hard 45s expiry. Mult/exp circles: decay-based expiry at end of decay period.
-      const expiresAt =
-        type === "add"
-          ? now + CIRCLE_TTL_MS
-          : type === "mult"
-            ? now + MULT_DECAY_MS
-            : now + EXP_DECAY_MS;
-      // chargedAt enables decay computation for mult/exp; add circles don't decay
+      // chargedAt enables decay value computation for mult/exp; add circles don't decay
       const chargedAt = type !== "add" ? now : null;
       // Value increases by 1 per purchase: add starts at 2, mult at 2, exp at 1
       const nextValue =
@@ -711,11 +646,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             type,
             value: nextValue,
             reRollCount: 0,
-            expiresAt,
             corrupted,
             chargedAt,
             lastUsedAt: null,
-            exhaustedUntil: null,
           },
         ],
       };
@@ -737,14 +670,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const cost = Math.ceil(rawCost * (1 - s.permDiscount * DISCOUNT_PER_LVL));
       if (s.points < cost) return s;
       ok = true;
-      const corrupted = circle.expiresAt !== null ? Math.random() < CORRUPT_CHANCE : false;
+      const corrupted = Math.random() < CORRUPT_CHANCE;
       const now = Date.now();
-      // Rerolling resets the decay timer so the circle starts fresh
-      const newExpiresAt =
-        circle.expiresAt === null ? null
-          : circle.type === "add" ? now + CIRCLE_TTL_MS
-          : circle.type === "mult" ? now + MULT_DECAY_MS
-          : now + EXP_DECAY_MS;
       return {
         ...s,
         points: s.points - cost,
@@ -754,11 +681,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
                 ...c,
                 value: randVal(c.type),
                 reRollCount: c.reRollCount + 1,
-                expiresAt: newExpiresAt,
                 corrupted,
                 chargedAt: c.chargedAt !== null ? now : null,
                 lastUsedAt: null,
-                exhaustedUntil: null,
               }
             : c,
         ),

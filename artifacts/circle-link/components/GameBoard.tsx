@@ -21,11 +21,9 @@ import Svg, {
 } from "react-native-svg";
 
 import {
-  CIRCLE_TTL_MS,
   EXP_VALUE_DIVISOR,
   MEGA_THRESHOLD,
   MULT_DECAY_MS,
-  MULT_EXHAUST_MS,
   SOLO_TAP_COOLDOWN_MS,
   SURGE_THRESHOLD,
 } from "@/constants/game";
@@ -33,7 +31,6 @@ import {
   type CircleNode,
   type CircleType,
   effectiveValue,
-  exhaustionFactor,
   isPrimed,
   useGame,
 } from "@/context/GameContext";
@@ -109,9 +106,6 @@ function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
-function isExhausted(c: CircleNode): boolean {
-  return c.exhaustedUntil !== null && Date.now() < c.exhaustedUntil;
-}
 
 type Particle = {
   id: number;
@@ -603,9 +597,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
           const cur = chainRef.current;
 
-          // Solo tap: if there is exactly one non-exhausted circle and the user
+          // Solo tap: if there is exactly one circle and the user
           // tapped (no drag) on it, fire it with a cooldown to prevent spam
-          const interactable = circlesRef.current.filter((c) => !isExhausted(c));
+          const interactable = circlesRef.current;
           if (
             cur.length <= 1 &&
             interactable.length === 1 &&
@@ -780,12 +774,11 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     return parts.join(" ");
   }, [chain]);
 
-  // Whether solo tap is possible this render (1 interactable circle and off cooldown)
+  // Whether solo tap is possible this render (exactly 1 circle on the board)
   const soloTapReady = useMemo(() => {
     if (mode !== "play") return false;
-    const interactable = state.circles.filter((c) => !isExhausted(c));
-    return interactable.length === 1;
-  }, [mode, state.circles, tick]);
+    return state.circles.length === 1;
+  }, [mode, state.circles]);
 
   const renderPos = useCallback(
     (c: CircleNode): { x: number; y: number } | null => {
@@ -852,44 +845,13 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 const pos = renderPos(c);
                 if (!pos) return null;
                 const inChain = chain.some((cc) => cc.id === c.id);
-                const exhausted = isExhausted(c);
                 const primed = c.type === "mult" && isPrimed(c, now);
                 const stroke = c.corrupted ? corruptedColorForType(c.type) : colorForType(c.type);
                 const isDragging = drag?.id === c.id;
                 const masteryStroke = Math.min(3, c.reRollCount * 0.15);
 
-                // Expiry / decay arc — arc duration is type-dependent
-                let expiryArc: React.ReactNode = null;
-                if (c.expiresAt !== null) {
-                  const remaining = Math.max(0, c.expiresAt - now);
-                  const totalMs = c.type === "mult" ? MULT_DECAY_MS : c.type === "exp" ? 90000 : CIRCLE_TTL_MS;
-                  const pct = remaining / totalMs;
-                  const circumference = 2 * Math.PI * CIRCLE_RADIUS;
-                  const arcColor =
-                    c.type !== "add"
-                      ? stroke   // decay arc in circle's own colour
-                      : pct < 0.2 ? "#ef4444" : pct < 0.45 ? "#f97316" : "#facc15";
-                  expiryArc = (
-                    <SvgCircle
-                      key={`exp-${c.id}`}
-                      cx={pos.x}
-                      cy={pos.y}
-                      r={CIRCLE_RADIUS + 6}
-                      fill="none"
-                      stroke={arcColor}
-                      strokeWidth={c.type !== "add" ? 2 : 3}
-                      strokeDasharray={`${circumference * pct} ${circumference * (1 - pct)}`}
-                      strokeLinecap="round"
-                      transform={`rotate(-90, ${pos.x}, ${pos.y})`}
-                      opacity={c.type !== "add" ? 0.45 : pct < 0.35 ? 1 : 0.6}
-                    />
-                  );
-                }
-
                 return (
                   <React.Fragment key={c.id}>
-                    {expiryArc}
-
                     {/* Primed glow ring for mult circles */}
                     {primed ? (
                       <SvgCircle
@@ -916,15 +878,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                             ? `${stroke}33`
                             : colors.circleFill
                       }
-                      stroke={exhausted ? `${stroke}88` : stroke}
+                      stroke={stroke}
                       strokeWidth={(inChain ? 4 : 3) + masteryStroke}
-                      strokeDasharray={
-                        exhausted ? "4,3" : c.corrupted && !inChain ? "5,3" : undefined
-                      }
-                      opacity={exhausted ? 0.65 : 1}
+                      strokeDasharray={c.corrupted && !inChain ? "5,3" : undefined}
                     />
-
-                    {/* Particles (rendered elsewhere) */}
                   </React.Fragment>
                 );
               })}
@@ -940,7 +897,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
               const pos = renderPos(c);
               if (!pos) return null;
               const inChain = chain.some((cc) => cc.id === c.id);
-              const exhausted = isExhausted(c);
               const popVal = popAnims.current.get(c.id);
               const popScale = popVal
                 ? popVal.interpolate({ inputRange: [0, 0.5, 1], outputRange: [1, 1.3, 1] })
@@ -951,12 +907,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                   ? Math.floor(stepwise[stepIndex])
                   : null;
               const stroke = c.corrupted ? corruptedColorForType(c.type) : colorForType(c.type);
-
-              // Exhaustion countdown (seconds remaining)
-              const exhaustLeft =
-                exhausted && c.exhaustedUntil !== null
-                  ? Math.ceil((c.exhaustedUntil - now) / 1000)
-                  : null;
 
               return (
                 <React.Fragment key={`lbl-${c.id}`}>
@@ -970,10 +920,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                     <Text
                       style={[
                         styles.circleLabel,
-                        { color: exhausted ? colors.mutedForeground : inChain ? "#ffffff" : stroke },
+                        { color: inChain ? "#ffffff" : stroke },
                       ]}
                     >
-                      {exhausted ? `💤${effectiveValue(c, now)}` : labelFor(c, effectiveValue(c, now))}
+                      {labelFor(c, effectiveValue(c, now))}
                     </Text>
                   </Animated.View>
 
@@ -1016,21 +966,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                     >
                       <Text style={[styles.runningTotalText, { color: colors.background }]}>
                         ={formatNum(runningTotal)}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {/* Exhaustion countdown */}
-                  {exhaustLeft !== null ? (
-                    <View
-                      pointerEvents="none"
-                      style={[
-                        styles.runningTotal,
-                        { left: pos.x - 24, top: pos.y + CIRCLE_RADIUS + 6, backgroundColor: colors.muted, width: 48 },
-                      ]}
-                    >
-                      <Text style={[styles.runningTotalText, { color: colors.mutedForeground }]}>
-                        {exhaustLeft}s
                       </Text>
                     </View>
                   ) : null}

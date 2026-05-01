@@ -66,7 +66,7 @@ export default function UpgradesScreen() {
             </Text>
           </View>
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            New circles expire in 45 s. They may spawn corrupted ({Math.round(CORRUPT_CHANCE * 100)}% chance) — tap them in Upgrade mode to cleanse. Use the Layout tab to remove unwanted ones.
+            New circles stay permanently. They may spawn corrupted ({Math.round(CORRUPT_CHANCE * 100)}% chance) — tap them in Upgrade mode to cleanse. Use the Layout tab to remove unwanted ones.
           </Text>
           <UpgradeRow
             iconName="plus"
@@ -85,7 +85,7 @@ export default function UpgradesScreen() {
             iconName="x"
             iconColor="#9333ea"
             title="Multiplication Circle"
-            description="Multiplies the running total. Becomes exhausted for 12 s after each release — plan your timing."
+            description="Multiplies the running total. Chain it with add circles to amplify your score."
             level={`${multCount} / ${MAX_MULT}`}
             costLabel="pts"
             costValue={boardFull ? null : multCost}
