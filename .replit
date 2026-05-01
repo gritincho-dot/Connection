@@ -29,7 +29,7 @@ outputType = "webview"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/circle-link && PORT=5000 pnpm run dev"
+args = "cd artifacts/circle-link && node scripts/build.js && PORT=5000 node server/serve.js"
 waitForPort = 5000
 
 [agent]
@@ -43,14 +43,6 @@ timeoutMs = 20000
 [[ports]]
 localPort = 5000
 externalPort = 80
-
-[[ports]]
-localPort = 8081
-externalPort = 80
-
-[[ports]]
-localPort = 20213
-externalPort = 3000
 
 [[ports]]
 localPort = 20214
