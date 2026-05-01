@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useRouter } from "expo-router";
 import React from "react";
 import {
   Animated,
@@ -13,6 +14,7 @@ import {
 } from "react-native";
 
 import { useGame } from "@/context/GameContext";
+import { useSave } from "@/context/SaveContext";
 import { useColors } from "@/hooks/useColors";
 import { type BgVariant } from "@/lib/theme";
 import { useSound } from "@/lib/sound";
@@ -39,6 +41,8 @@ export function SettingsSheet({
   const colors = useColors();
   const sound = useSound();
   const { state, setSoundEnabled, setBgVariant } = useGame();
+  const { exitToMenu } = useSave();
+  const router = useRouter();
 
   const tapSound = () => {
     if (Platform.OS !== "web") Haptics.selectionAsync().catch(() => {});
@@ -191,6 +195,28 @@ export function SettingsSheet({
               <Feather name="shuffle" size={16} color={colors.foreground} />
               <Text style={[styles.actionText, { color: colors.foreground }]}>
                 Re-arrange circles
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={styles.section}>
+            <Pressable
+              onPress={() => {
+                onClose();
+                exitToMenu();
+                router.replace("/");
+              }}
+              style={[
+                styles.actionBtn,
+                {
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Feather name="home" size={16} color={colors.foreground} />
+              <Text style={[styles.actionText, { color: colors.foreground }]}>
+                Return to Menu
               </Text>
             </Pressable>
           </View>

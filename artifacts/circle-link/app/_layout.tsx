@@ -16,6 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { GameProvider, useGame } from "@/context/GameContext";
+import { SaveProvider, useSave } from "@/context/SaveContext";
 import { SoundProvider } from "@/lib/sound";
 import { PALETTES } from "@/lib/theme";
 
@@ -36,9 +37,19 @@ function ThemedShell({ children }: { children: React.ReactNode }) {
 
 function RootLayoutNav() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
+    <Stack screenOptions={{ headerShown: false, animation: "fade" }}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
+  );
+}
+
+function AppCore({ children }: { children: React.ReactNode }) {
+  const { slotKey } = useSave();
+  return (
+    <GameProvider key={slotKey ?? "__menu__"} slotKey={slotKey}>
+      <ThemedShell>{children}</ThemedShell>
+    </GameProvider>
   );
 }
 
@@ -64,11 +75,11 @@ export default function RootLayout() {
         <QueryClientProvider client={queryClient}>
           <GestureHandlerRootView style={{ flex: 1 }}>
             <KeyboardProvider>
-              <GameProvider>
-                <ThemedShell>
+              <SaveProvider>
+                <AppCore>
                   <RootLayoutNav />
-                </ThemedShell>
-              </GameProvider>
+                </AppCore>
+              </SaveProvider>
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>

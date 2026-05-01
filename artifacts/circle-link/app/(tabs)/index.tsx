@@ -7,6 +7,7 @@ import { GameBoard, type Mode } from "@/components/GameBoard";
 import { ModeToolbar } from "@/components/ModeToolbar";
 import { SettingsSheet } from "@/components/SettingsSheet";
 import { StatsBar } from "@/components/StatsBar";
+import { WinModal } from "@/components/WinModal";
 import { useGame } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -17,7 +18,7 @@ export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const [mode, setMode] = useState<Mode>("play");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const { shuffleLayout } = useGame();
+  const { shuffleLayout, state } = useGame();
 
   const scale = useRef(new Animated.Value(1)).current;
   const scaleRef = useRef(1);
@@ -45,6 +46,7 @@ export default function GameScreen() {
       >
         <GameBoard mode={mode} scale={scale} scaleRef={scaleRef} />
       </View>
+      <WinModal visible={state.hasWon} />
       <AchievementToast />
       <SettingsSheet
         visible={settingsOpen}

@@ -113,6 +113,9 @@ export const SURGE_BONUS = 0.25;     // +25%
 export const MEGA_THRESHOLD = 7;     // chain ≥ 7 circles → Mega Surge
 export const MEGA_BONUS = 0.40;      // additional +40%
 
+// Win condition: player must reach this many points
+export const WIN_TARGET = 1e100;
+
 export type Achievement = {
   id: string;
   label: string;

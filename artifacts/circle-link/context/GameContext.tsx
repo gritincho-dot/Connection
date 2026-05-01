@@ -55,6 +55,7 @@ import {
   STREAK_THRESHOLD,
   SURGE_BONUS,
   SURGE_THRESHOLD,
+  WIN_TARGET,
 } from "@/constants/game";
 import { type BgVariant, DEFAULT_BG } from "@/lib/theme";
 
@@ -135,6 +136,7 @@ export type GameState = {
   lastReleaseAt: number;
   achievements: string[];
   settings: Settings;
+  hasWon: boolean;
 };
 
 let idCounter = 0;
@@ -187,9 +189,9 @@ const initial: GameState = {
     soundEnabled: true,
     bgVariant: DEFAULT_BG,
   },
+  hasWon: false,
 };
 
-const STORAGE_KEY = "@circle-link/state-v5";
 
 export type Costs = {
   energy: number;
@@ -228,6 +230,7 @@ type Ctx = {
   setSoundEnabled: (v: boolean) => void;
   setBgVariant: (v: BgVariant) => void;
   acknowledgeAchievement: (id: string) => void;
+  acknowledgeWin: () => void;
   pendingAchievement: string | null;
   canRebirth: boolean;
   boardFull: boolean;
@@ -265,7 +268,7 @@ function checkAchievements(s: GameState): string[] {
   return unlocked;
 }
 
-export function GameProvider({ children }: { children: React.ReactNode }) {
+export function GameProvider({ children, slotKey }: { children: React.ReactNode; slotKey: string | null }) {
   const [state, setState] = useState<GameState>(initial);
   const [loaded, setLoaded] = useState(false);
   const [pendingAchievement, setPendingAchievement] = useState<string | null>(null);
@@ -273,46 +276,50 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Load persisted state
+  // Load persisted state when slotKey is available
   useEffect(() => {
+    setState({ ...initial, circles: makeStartingCircles() });
+    setLoaded(false);
     (async () => {
-      try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Partial<GameState>;
-          if (!parsed.circles || !Array.isArray(parsed.circles) || parsed.circles.length === 0) {
-            parsed.circles = makeStartingCircles();
-          } else {
-            // Migrate old circles — strip removed fields, ensure new fields exist
-            parsed.circles = parsed.circles.map((c: CircleNode & { expiresAt?: unknown; exhaustedUntil?: unknown }) => {
-              const { expiresAt: _e, exhaustedUntil: _x, ...rest } = c as CircleNode & { expiresAt?: unknown; exhaustedUntil?: unknown };
-              return {
-                ...rest,
-                corrupted: rest.corrupted ?? false,
-                chargedAt: rest.chargedAt ?? null,
-                lastUsedAt: rest.lastUsedAt ?? null,
-              };
-            });
+      if (slotKey) {
+        try {
+          const raw = await AsyncStorage.getItem(slotKey);
+          if (raw) {
+            const parsed = JSON.parse(raw) as Partial<GameState>;
+            if (!parsed.circles || !Array.isArray(parsed.circles) || parsed.circles.length === 0) {
+              parsed.circles = makeStartingCircles();
+            } else {
+              parsed.circles = parsed.circles.map((c: CircleNode & { expiresAt?: unknown; exhaustedUntil?: unknown }) => {
+                const { expiresAt: _e, exhaustedUntil: _x, ...rest } = c as CircleNode & { expiresAt?: unknown; exhaustedUntil?: unknown };
+                return {
+                  ...rest,
+                  corrupted: rest.corrupted ?? false,
+                  chargedAt: rest.chargedAt ?? null,
+                  lastUsedAt: rest.lastUsedAt ?? null,
+                };
+              });
+            }
+            if (!parsed.settings) parsed.settings = initial.settings;
+            if (!parsed.achievements) parsed.achievements = [];
+            setState({ ...initial, ...parsed });
           }
-          if (!parsed.settings) parsed.settings = initial.settings;
-          if (!parsed.achievements) parsed.achievements = [];
-          setState({ ...initial, ...parsed });
+        } catch {
+          // ignore
         }
-      } catch {
-        // ignore
       }
       setLoaded(true);
     })();
-  }, []);
+  }, [slotKey]);
 
   // Persist on change
   useEffect(() => {
-    if (!loaded) return;
+    if (!loaded || !slotKey) return;
     const t = setTimeout(() => {
-      AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
+      const toSave = { ...state, lastPlayed: Date.now() };
+      AsyncStorage.setItem(slotKey, JSON.stringify(toSave)).catch(() => {});
     }, 300);
     return () => clearTimeout(t);
-  }, [state, loaded]);
+  }, [state, loaded, slotKey]);
 
   // ── Passive income interval ──────────────────────────────────────────────────
   // Every second: grant passive income based on total circle values
@@ -320,14 +327,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (!loaded) return;
     const id = setInterval(() => {
       setState((s) => {
+        if (s.hasWon) return s;
         const totalVal = s.circles.reduce((sum, c) => sum + c.value, 0);
         const passive = Math.floor(totalVal * PASSIVE_INCOME_RATE);
         if (passive === 0) return s;
+        const newPoints = s.points + passive;
+        const won = newPoints >= WIN_TARGET;
         return {
           ...s,
-          points: s.points + passive,
+          points: newPoints,
           totalEarnedThisRun: s.totalEarnedThisRun + passive,
           totalLifetime: s.totalLifetime + passive,
+          hasWon: won ? true : s.hasWon,
         };
       });
     }, 1000);
@@ -504,9 +515,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             return c;
           });
 
+        const newPoints = s.points + earned;
         const next: GameState = {
           ...s,
-          points: s.points + earned,
+          points: newPoints,
           totalEarnedThisRun: s.totalEarnedThisRun + earned,
           totalLifetime: s.totalLifetime + earned,
           totalReleases: s.totalReleases + 1,
@@ -515,6 +527,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           bestChainLength: Math.max(s.bestChainLength, chain.length),
           bestSingleEarning: Math.max(s.bestSingleEarning, earned),
           circles: updatedCircles,
+          hasWon: s.hasWon || newPoints >= WIN_TARGET,
         };
 
         // Unlock achievements
@@ -788,10 +801,15 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return ok;
   }, [enqueueAchievements]);
 
+  const acknowledgeWin = useCallback(() => {
+    // Mark win as acknowledged so we don't re-trigger (the modal handles navigation)
+    setState((s) => ({ ...s, hasWon: false }));
+  }, []);
+
   const resetAll = useCallback(async () => {
     setState({ ...initial, circles: makeStartingCircles() });
-    await AsyncStorage.removeItem(STORAGE_KEY);
-  }, []);
+    if (slotKey) await AsyncStorage.removeItem(slotKey);
+  }, [slotKey]);
 
   const setSoundEnabled = useCallback((v: boolean) => {
     setState((s) => ({ ...s, settings: { ...s.settings, soundEnabled: v } }));
@@ -848,6 +866,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setSoundEnabled,
     setBgVariant,
     acknowledgeAchievement,
+    acknowledgeWin,
     pendingAchievement,
     canRebirth,
     boardFull,
