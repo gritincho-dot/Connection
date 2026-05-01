@@ -48,6 +48,7 @@ import {
   PRIME_IDLE_MS,
   REBIRTH_GAIN,
   REBIRTH_THRESHOLD,
+  REBIRTH_REWARDS,
   REROLL_COST_ADD,
   REROLL_COST_EXP,
   REROLL_COST_MULT,
@@ -55,7 +56,12 @@ import {
   STREAK_THRESHOLD,
   SURGE_BONUS,
   SURGE_THRESHOLD,
+  UPGRADE_COST_ADD,
+  UPGRADE_COST_EXP,
+  UPGRADE_COST_MULT,
   WIN_TARGET,
+  computeRebirthBonuses,
+  type RebirthBonuses,
 } from "@/constants/game";
 import { type BgVariant, DEFAULT_BG } from "@/lib/theme";
 
@@ -198,8 +204,8 @@ export type Costs = {
   add: number | null;
   mult: number | null;
   exp: number | null;
-  permPower: number | null;
-  permMult: number | null;
+  permPower: number;
+  permMult: number;
   permDiscount: number | null;
   rebirthThreshold: number;
   rebirthCpGain: number;
@@ -208,9 +214,11 @@ export type Costs = {
 type Ctx = {
   state: GameState;
   costs: Costs;
+  rebirthBonuses: RebirthBonuses;
   applyDiscount: (cost: number) => number;
   reRollCostFor: (circle: CircleNode) => number;
   cleanseCostFor: (circle: CircleNode) => number;
+  upgradeCostFor: (circle: CircleNode) => number;
   computeRelease: (chain: CircleNode[]) => number;
   computeReleaseStepwise: (chain: CircleNode[]) => number[];
   releaseChain: (chain: CircleNode[]) => ReleaseInfo;
@@ -218,6 +226,7 @@ type Ctx = {
   buyEnergy: () => boolean;
   addCircle: (type: CircleType) => boolean;
   reRollCircle: (id: string) => boolean;
+  upgradeCircle: (id: string) => boolean;
   cleanseCircle: (id: string) => boolean;
   removeCircle: (id: string) => void;
   moveCircle: (id: string, x: number, y: number) => void;
@@ -328,8 +337,9 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     const id = setInterval(() => {
       setState((s) => {
         if (s.hasWon) return s;
+        const bonuses = computeRebirthBonuses(s.rebirthCount);
         const totalVal = s.circles.reduce((sum, c) => sum + c.value, 0);
-        const passive = Math.floor(totalVal * PASSIVE_INCOME_RATE);
+        const passive = Math.floor(totalVal * PASSIVE_INCOME_RATE * (1 + bonuses.passivePct / 100));
         if (passive === 0) return s;
         const newPoints = s.points + passive;
         const won = newPoints >= WIN_TARGET;
@@ -381,6 +391,16 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
           ? CLEANSE_COST_MULT
           : CLEANSE_COST_EXP;
     return Math.ceil(base * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL));
+  }, []);
+
+  const upgradeCostFor = useCallback((circle: CircleNode): number => {
+    const raw =
+      circle.type === "add"
+        ? UPGRADE_COST_ADD(circle.reRollCount, circle.value)
+        : circle.type === "mult"
+          ? UPGRADE_COST_MULT(circle.reRollCount, circle.value)
+          : UPGRADE_COST_EXP(circle.reRollCount, circle.value);
+    return Math.ceil(raw * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL));
   }, []);
 
   // ── Computation ──────────────────────────────────────────────────────────────
@@ -459,6 +479,13 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
 
       setState((s) => {
         const now = Date.now();
+        const bonuses = computeRebirthBonuses(s.rebirthCount);
+        const effectiveSurgeThreshold = Math.max(2, SURGE_THRESHOLD - bonuses.surgeThresholdDelta);
+        const effectiveMegaThreshold = Math.max(3, MEGA_THRESHOLD - bonuses.megaThresholdDelta);
+        const effectiveComboWindowMs = COMBO_WINDOW_MS + bonuses.extraComboWindowMs;
+        const effectiveComboMaxStacks = COMBO_MAX_STACKS + bonuses.extraComboStacks;
+        const effectiveCritChance = Math.min(0.95, CRIT_CHANCE + bonuses.extraCritChance);
+
         const steps = computeReleaseStepwise(chain);
         let result = steps[steps.length - 1];
 
@@ -473,9 +500,9 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
           result *= 1 + STREAK_BONUS_PER_EXTRA * extra;
         }
 
-        // Chain length milestones: Surge + Mega Surge
-        const hasSurge = chain.length >= SURGE_THRESHOLD;
-        const hasMega = chain.length >= MEGA_THRESHOLD;
+        // Chain length milestones: Surge + Mega Surge (thresholds reduced by rebirth bonuses)
+        const hasSurge = chain.length >= effectiveSurgeThreshold;
+        const hasMega = chain.length >= effectiveMegaThreshold;
         const preBonus = result;
         if (hasSurge) result *= 1 + SURGE_BONUS;
         if (hasMega) result *= 1 + MEGA_BONUS;
@@ -489,13 +516,14 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
 
         result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
         result *= 1 + s.permPower * PERM_POWER_BONUS;
+        result *= 1 + bonuses.releasePct / 100;
 
-        const within = now - s.lastReleaseAt < COMBO_WINDOW_MS;
-        const newCombo = within ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS) : 1;
+        const within = now - s.lastReleaseAt < effectiveComboWindowMs;
+        const newCombo = within ? Math.min(s.comboCount + 1, effectiveComboMaxStacks) : 1;
         result *= 1 + (newCombo - 1) * COMBO_BONUS_PER_STACK;
 
         const baseEarned = Math.floor(result);
-        const crit = Math.random() < CRIT_CHANCE;
+        const crit = Math.random() < effectiveCritChance;
         let earned = crit ? baseEarned * CRIT_MULTIPLIER : baseEarned;
 
         // Chain reaction (requires at least one rebirth)
@@ -612,8 +640,9 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
   const addCircle = useCallback((type: CircleType) => {
     let ok = false;
     setState((s) => {
-      // Hard cap on total circles
-      if (s.circles.length >= MAX_TOTAL_CIRCLES) return s;
+      // Hard cap on total circles (increased by rebirth bonuses)
+      const bonuses = computeRebirthBonuses(s.rebirthCount);
+      if (s.circles.length >= MAX_TOTAL_CIRCLES + bonuses.extraBoardSlots) return s;
 
       const count = s.circles.filter((c) => c.type === type).length;
       const max = type === "add" ? MAX_ADD : type === "mult" ? MAX_MULT : MAX_EXP;
@@ -688,6 +717,33 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     return ok;
   }, []);
 
+  const upgradeCircle = useCallback((id: string) => {
+    let ok = false;
+    setState((s) => {
+      const circle = s.circles.find((c) => c.id === id);
+      if (!circle) return s;
+      const rawCost =
+        circle.type === "add"
+          ? UPGRADE_COST_ADD(circle.reRollCount, circle.value)
+          : circle.type === "mult"
+            ? UPGRADE_COST_MULT(circle.reRollCount, circle.value)
+            : UPGRADE_COST_EXP(circle.reRollCount, circle.value);
+      const cost = Math.ceil(rawCost * (1 - s.permDiscount * DISCOUNT_PER_LVL));
+      if (s.points < cost) return s;
+      ok = true;
+      return {
+        ...s,
+        points: s.points - cost,
+        circles: s.circles.map((c) =>
+          c.id === id
+            ? { ...c, value: c.value + 1, reRollCount: c.reRollCount + 1 }
+            : c,
+        ),
+      };
+    });
+    return ok;
+  }, []);
+
   const cleanseCircle = useCallback((id: string) => {
     let ok = false;
     setState((s) => {
@@ -740,7 +796,6 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     let ok = false;
     setState((s) => {
       const raw = PERM_POWER_COST(s.permPower);
-      if (raw === null) return s;
       if (s.circlePoints < raw) return s;
       ok = true;
       return { ...s, circlePoints: s.circlePoints - raw, permPower: s.permPower + 1 };
@@ -752,7 +807,6 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     let ok = false;
     setState((s) => {
       const raw = PERM_MULT_COST(s.permMult);
-      if (raw === null) return s;
       if (s.circlePoints < raw) return s;
       ok = true;
       return { ...s, circlePoints: s.circlePoints - raw, permMult: s.permMult + 1 };
@@ -777,9 +831,11 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     setState((s) => {
       const threshold = REBIRTH_THRESHOLD(s.rebirthCount);
       if (s.totalEarnedThisRun < threshold) return s;
-      const gain = REBIRTH_GAIN(s.totalEarnedThisRun);
-      if (gain <= 0) return s;
+      const baseGain = REBIRTH_GAIN(s.totalEarnedThisRun);
+      if (baseGain <= 0) return s;
       ok = true;
+      const bonuses = computeRebirthBonuses(s.rebirthCount);
+      const gain = Math.floor(baseGain * (1 + bonuses.cpPct / 100));
       const next: GameState = {
         ...s,
         points: 0,
@@ -819,10 +875,18 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     setState((s) => ({ ...s, settings: { ...s.settings, bgVariant: v } }));
   }, []);
 
+  const rebirthBonuses = useMemo<RebirthBonuses>(
+    () => computeRebirthBonuses(state.rebirthCount),
+    [state.rebirthCount],
+  );
+
   const costs = useMemo<Costs>(() => {
     const addCount = state.circles.filter((c) => c.type === "add").length;
     const multCount = state.circles.filter((c) => c.type === "mult").length;
     const expCount = state.circles.filter((c) => c.type === "exp").length;
+    const effectiveCpGain = Math.floor(
+      REBIRTH_GAIN(state.totalEarnedThisRun) * (1 + rebirthBonuses.cpPct / 100),
+    );
     return {
       energy: ENERGY_COST(state.energyLevel),
       add: addCount >= MAX_ADD ? null : ADD_COST(addCount),
@@ -832,21 +896,23 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
       permMult: PERM_MULT_COST(state.permMult),
       permDiscount: PERM_DISCOUNT_COST(state.permDiscount),
       rebirthThreshold: REBIRTH_THRESHOLD(state.rebirthCount),
-      rebirthCpGain: REBIRTH_GAIN(state.totalEarnedThisRun),
+      rebirthCpGain: effectiveCpGain,
     };
-  }, [state]);
+  }, [state, rebirthBonuses]);
 
   const canRebirth =
     state.totalEarnedThisRun >= costs.rebirthThreshold && costs.rebirthCpGain > 0;
 
-  const boardFull = state.circles.length >= MAX_TOTAL_CIRCLES;
+  const boardFull = state.circles.length >= MAX_TOTAL_CIRCLES + rebirthBonuses.extraBoardSlots;
 
   const value: Ctx = {
     state,
     costs,
+    rebirthBonuses,
     applyDiscount,
     reRollCostFor,
     cleanseCostFor,
+    upgradeCostFor,
     computeRelease,
     computeReleaseStepwise,
     releaseChain,
@@ -854,6 +920,7 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     buyEnergy,
     addCircle,
     reRollCircle,
+    upgradeCircle,
     cleanseCircle,
     removeCircle,
     moveCircle,

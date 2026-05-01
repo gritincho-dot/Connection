@@ -131,9 +131,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     releaseSolo,
     moveCircle,
     reRollCircle,
+    upgradeCircle,
     cleanseCircle,
     removeCircle,
-    reRollCostFor,
+    upgradeCostFor,
     cleanseCostFor,
   } = useGame();
 
@@ -574,10 +575,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 sound.play("buzz", 1.0);
               }
             } else {
-              const ok = reRollCircle(hit.id);
+              const ok = upgradeCircle(hit.id);
               if (ok) {
                 triggerHaptic("heavy");
-                sound.play("whoosh", 1.0);
+                sound.play("ding", 1.0);
                 popCircle(hit.id);
                 if (hit.x !== undefined && hit.y !== undefined)
                   spawnParticles(hit.x, hit.y, colorForType(hit.type), { count: 10 });
@@ -999,7 +1000,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 const sV = scaleRef.current;
                 const sx = (pos.x - w / 2) * sV + w / 2;
                 const sy = (pos.y - h / 2) * sV + h / 2;
-                const cost = c.corrupted ? cleanseCostFor(c) : reRollCostFor(c);
+                const cost = c.corrupted ? cleanseCostFor(c) : upgradeCostFor(c);
                 const affordable = state.points >= cost;
                 const isCleanse = c.corrupted;
                 return (

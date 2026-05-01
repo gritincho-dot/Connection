@@ -19,12 +19,27 @@ export const REROLL_COST_MULT = (n: number): number =>
 export const REROLL_COST_EXP = (n: number): number =>
   Math.floor(3500 * Math.pow(1.7, n));
 
-export const PERM_POWER_COST = (lvl: number): number | null =>
-  lvl >= 10 ? null : Math.floor(1 * Math.pow(2, lvl));
+// Upgrade costs: increase circle value by 1
+// Add: base + current value (each upgrade adds current value to base)
+// Mult: base * current value (each upgrade multiplies base by current value)
+// Exp: base * value^value (exponential self-multiplication)
+export const UPGRADE_COST_ADD = (count: number, value: number): number =>
+  Math.floor(60 * Math.pow(1.2, count) + value);
 
-export const PERM_MULT_COST = (lvl: number): number | null =>
-  lvl >= 8 ? null : Math.floor(2 * Math.pow(2, lvl));
+export const UPGRADE_COST_MULT = (count: number, value: number): number =>
+  Math.floor(200 * Math.pow(1.3, count) * value);
 
+export const UPGRADE_COST_EXP = (count: number, value: number): number =>
+  Math.floor(1000 * Math.pow(1.4, count) * Math.pow(value, value));
+
+// CP upgrade costs — Eternal Power and Eternal Multiplier are infinite
+export const PERM_POWER_COST = (lvl: number): number =>
+  Math.floor(1 * Math.pow(2, lvl));
+
+export const PERM_MULT_COST = (lvl: number): number =>
+  Math.floor(2 * Math.pow(2, lvl));
+
+// Cheaper Upgrades stays capped at 5 levels
 export const PERM_DISCOUNT_COST = (lvl: number): number | null =>
   lvl >= 5 ? null : Math.floor(3 * Math.pow(2, lvl));
 
@@ -44,7 +59,7 @@ export const DISCOUNT_PER_LVL = 0.1;
 export const MAX_ADD = 6;
 export const MAX_MULT = 3;
 export const MAX_EXP = 2;
-// Hard cap on total circles on the board at once
+// Hard cap on total circles on the board at once (can increase via rebirth rewards)
 export const MAX_TOTAL_CIRCLES = 10;
 
 // Exp circle exponent divisor: value/EXP_VALUE_DIVISOR controls how steep the power is
@@ -140,3 +155,182 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "megasurge", label: "Mega Surge", description: "Build a 7-circle chain" },
   { id: "primed", label: "Patience Pays", description: "Trigger a primed multiplier" },
 ];
+
+// ─── Rebirth Reward System ────────────────────────────────────────────────────
+
+export type RebirthRewardEffect =
+  | { type: "passive_bonus"; pct: number }
+  | { type: "release_bonus"; pct: number }
+  | { type: "cp_bonus"; pct: number }
+  | { type: "max_circles"; extra: number }
+  | { type: "crit_chance"; extra: number }
+  | { type: "combo_window"; extraMs: number }
+  | { type: "combo_stacks"; extra: number }
+  | { type: "surge_threshold"; delta: number }
+  | { type: "mega_threshold"; delta: number };
+
+export type RebirthReward = {
+  label: string;
+  description: string;
+  effect: RebirthRewardEffect;
+};
+
+export const REBIRTH_REWARDS: RebirthReward[] = [
+  // Tier 1 (1–10): Foundations
+  { label: "Awakening", description: "+10% passive income", effect: { type: "passive_bonus", pct: 10 } },
+  { label: "Momentum", description: "+10% release bonus", effect: { type: "release_bonus", pct: 10 } },
+  { label: "Accumulation", description: "+5% CP gain", effect: { type: "cp_bonus", pct: 5 } },
+  { label: "Expansion", description: "+1 board slot (11 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Fortune's Eye", description: "+2% crit chance", effect: { type: "crit_chance", extra: 0.02 } },
+  { label: "Vitality", description: "+12% passive income", effect: { type: "passive_bonus", pct: 12 } },
+  { label: "Impulse", description: "+12% release bonus", effect: { type: "release_bonus", pct: 12 } },
+  { label: "Reservoir", description: "+8% CP gain", effect: { type: "cp_bonus", pct: 8 } },
+  { label: "Rhythm", description: "+1s combo window", effect: { type: "combo_window", extraMs: 1000 } },
+  { label: "Growth", description: "+1 board slot (12 max)", effect: { type: "max_circles", extra: 1 } },
+
+  // Tier 2 (11–20): Acceleration
+  { label: "Surge Tide", description: "+15% passive income", effect: { type: "passive_bonus", pct: 15 } },
+  { label: "Force Flow", description: "+15% release bonus", effect: { type: "release_bonus", pct: 15 } },
+  { label: "Harvest", description: "+10% CP gain", effect: { type: "cp_bonus", pct: 10 } },
+  { label: "Keen Edge", description: "+3% crit chance", effect: { type: "crit_chance", extra: 0.03 } },
+  { label: "Cascade Start", description: "+1 combo stack", effect: { type: "combo_stacks", extra: 1 } },
+  { label: "Resonance", description: "+18% passive income", effect: { type: "passive_bonus", pct: 18 } },
+  { label: "Amplify", description: "+18% release bonus", effect: { type: "release_bonus", pct: 18 } },
+  { label: "Treasury", description: "+12% CP gain", effect: { type: "cp_bonus", pct: 12 } },
+  { label: "Domain", description: "+1 board slot (13 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Precision", description: "+5% crit chance", effect: { type: "crit_chance", extra: 0.05 } },
+
+  // Tier 3 (21–30): Power
+  { label: "Wellspring", description: "+20% passive income", effect: { type: "passive_bonus", pct: 20 } },
+  { label: "Torrent", description: "+20% release bonus", effect: { type: "release_bonus", pct: 20 } },
+  { label: "Stockpile", description: "+15% CP gain", effect: { type: "cp_bonus", pct: 15 } },
+  { label: "Extended Flow", description: "+2s combo window", effect: { type: "combo_window", extraMs: 2000 } },
+  { label: "Double Tap", description: "+2 combo stacks", effect: { type: "combo_stacks", extra: 2 } },
+  { label: "Deep Root", description: "+22% passive income", effect: { type: "passive_bonus", pct: 22 } },
+  { label: "Overdrive", description: "+22% release bonus", effect: { type: "release_bonus", pct: 22 } },
+  { label: "Bounty", description: "+18% CP gain", effect: { type: "cp_bonus", pct: 18 } },
+  { label: "Spread", description: "+1 board slot (14 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Razor", description: "+7% crit chance", effect: { type: "crit_chance", extra: 0.07 } },
+
+  // Tier 4 (31–40): Elite
+  { label: "Flood", description: "+25% passive income", effect: { type: "passive_bonus", pct: 25 } },
+  { label: "Barrage", description: "+25% release bonus", effect: { type: "release_bonus", pct: 25 } },
+  { label: "Vault", description: "+20% CP gain", effect: { type: "cp_bonus", pct: 20 } },
+  { label: "Sharpened", description: "+5% crit chance", effect: { type: "crit_chance", extra: 0.05 } },
+  { label: "Afterburn", description: "+1 combo stack", effect: { type: "combo_stacks", extra: 1 } },
+  { label: "Geyser", description: "+28% passive income", effect: { type: "passive_bonus", pct: 28 } },
+  { label: "Onslaught", description: "+28% release bonus", effect: { type: "release_bonus", pct: 28 } },
+  { label: "Coffers", description: "+22% CP gain", effect: { type: "cp_bonus", pct: 22 } },
+  { label: "Long Wave", description: "+3s combo window", effect: { type: "combo_window", extraMs: 3000 } },
+  { label: "Territory", description: "+1 board slot (15 max)", effect: { type: "max_circles", extra: 1 } },
+
+  // Tier 5 (41–50): Master
+  { label: "Deluge", description: "+30% passive income", effect: { type: "passive_bonus", pct: 30 } },
+  { label: "Blitz", description: "+30% release bonus", effect: { type: "release_bonus", pct: 30 } },
+  { label: "Hoard", description: "+25% CP gain", effect: { type: "cp_bonus", pct: 25 } },
+  { label: "Piercing", description: "+7% crit chance", effect: { type: "crit_chance", extra: 0.07 } },
+  { label: "Rapid Fire", description: "+2 combo stacks", effect: { type: "combo_stacks", extra: 2 } },
+  { label: "Torrent II", description: "+33% passive income", effect: { type: "passive_bonus", pct: 33 } },
+  { label: "Overload", description: "+33% release bonus", effect: { type: "release_bonus", pct: 33 } },
+  { label: "Wealth", description: "+28% CP gain", effect: { type: "cp_bonus", pct: 28 } },
+  { label: "Expanse", description: "+1 board slot (16 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Early Surge", description: "Surge activates at chain 4", effect: { type: "surge_threshold", delta: 1 } },
+
+  // Tier 6 (51–60): Legend
+  { label: "Cascade II", description: "+36% passive income", effect: { type: "passive_bonus", pct: 36 } },
+  { label: "Volley", description: "+36% release bonus", effect: { type: "release_bonus", pct: 36 } },
+  { label: "Reserve", description: "+30% CP gain", effect: { type: "cp_bonus", pct: 30 } },
+  { label: "Deadly", description: "+9% crit chance", effect: { type: "crit_chance", extra: 0.09 } },
+  { label: "Eternal Wave", description: "+4s combo window", effect: { type: "combo_window", extraMs: 4000 } },
+  { label: "Maelstrom", description: "+40% passive income", effect: { type: "passive_bonus", pct: 40 } },
+  { label: "Salvo", description: "+40% release bonus", effect: { type: "release_bonus", pct: 40 } },
+  { label: "Windfall", description: "+33% CP gain", effect: { type: "cp_bonus", pct: 33 } },
+  { label: "Realm", description: "+1 board slot (17 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Triple Down", description: "+3 combo stacks", effect: { type: "combo_stacks", extra: 3 } },
+
+  // Tier 7 (61–70): Ascendant
+  { label: "Surge III", description: "+45% passive income", effect: { type: "passive_bonus", pct: 45 } },
+  { label: "Tempest", description: "+45% release bonus", effect: { type: "release_bonus", pct: 45 } },
+  { label: "Trove", description: "+36% CP gain", effect: { type: "cp_bonus", pct: 36 } },
+  { label: "Critical Mass", description: "+10% crit chance", effect: { type: "crit_chance", extra: 0.10 } },
+  { label: "Momentum II", description: "+1 combo stack", effect: { type: "combo_stacks", extra: 1 } },
+  { label: "Typhoon", description: "+50% passive income", effect: { type: "passive_bonus", pct: 50 } },
+  { label: "Hurricane", description: "+50% release bonus", effect: { type: "release_bonus", pct: 50 } },
+  { label: "Treasury II", description: "+40% CP gain", effect: { type: "cp_bonus", pct: 40 } },
+  { label: "Dominion", description: "+1 board slot (18 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Early Mega", description: "Mega Surge activates at chain 6", effect: { type: "mega_threshold", delta: 1 } },
+
+  // Tier 8 (71–80): Transcendent
+  { label: "Torrent III", description: "+55% passive income", effect: { type: "passive_bonus", pct: 55 } },
+  { label: "Fusillade", description: "+55% release bonus", effect: { type: "release_bonus", pct: 55 } },
+  { label: "Stockpile II", description: "+45% CP gain", effect: { type: "cp_bonus", pct: 45 } },
+  { label: "Lethal", description: "+12% crit chance", effect: { type: "crit_chance", extra: 0.12 } },
+  { label: "Endless Tide", description: "+5s combo window", effect: { type: "combo_window", extraMs: 5000 } },
+  { label: "Void Flood", description: "+60% passive income", effect: { type: "passive_bonus", pct: 60 } },
+  { label: "Annihilation", description: "+60% release bonus", effect: { type: "release_bonus", pct: 60 } },
+  { label: "Abundance", description: "+50% CP gain", effect: { type: "cp_bonus", pct: 50 } },
+  { label: "Infinity Board", description: "+1 board slot (19 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Quad Strike", description: "+4 combo stacks", effect: { type: "combo_stacks", extra: 4 } },
+
+  // Tier 9 (81–90): Cosmic
+  { label: "Nebula Flow", description: "+65% passive income", effect: { type: "passive_bonus", pct: 65 } },
+  { label: "Stellar Burst", description: "+65% release bonus", effect: { type: "release_bonus", pct: 65 } },
+  { label: "Cosmic Hoard", description: "+55% CP gain", effect: { type: "cp_bonus", pct: 55 } },
+  { label: "Supernova Eye", description: "+14% crit chance", effect: { type: "crit_chance", extra: 0.14 } },
+  { label: "Deep Combo", description: "+2 combo stacks", effect: { type: "combo_stacks", extra: 2 } },
+  { label: "Galactic Stream", description: "+70% passive income", effect: { type: "passive_bonus", pct: 70 } },
+  { label: "Nova Strike", description: "+70% release bonus", effect: { type: "release_bonus", pct: 70 } },
+  { label: "Star Wealth", description: "+60% CP gain", effect: { type: "cp_bonus", pct: 60 } },
+  { label: "Cosmos Board", description: "+1 board slot (20 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Rift Window", description: "+6s combo window", effect: { type: "combo_window", extraMs: 6000 } },
+
+  // Tier 10 (91–100): Divine
+  { label: "Divine Tide", description: "+80% passive income", effect: { type: "passive_bonus", pct: 80 } },
+  { label: "Omnistrike", description: "+80% release bonus", effect: { type: "release_bonus", pct: 80 } },
+  { label: "Divine Treasury", description: "+70% CP gain", effect: { type: "cp_bonus", pct: 70 } },
+  { label: "Godseye", description: "+15% crit chance", effect: { type: "crit_chance", extra: 0.15 } },
+  { label: "Quintuple", description: "+3 combo stacks", effect: { type: "combo_stacks", extra: 3 } },
+  { label: "Infinite Flow", description: "+90% passive income", effect: { type: "passive_bonus", pct: 90 } },
+  { label: "Absolute Force", description: "+90% release bonus", effect: { type: "release_bonus", pct: 90 } },
+  { label: "Ultimate Hoard", description: "+80% CP gain", effect: { type: "cp_bonus", pct: 80 } },
+  { label: "Divine Board", description: "+1 board slot (21 max)", effect: { type: "max_circles", extra: 1 } },
+  { label: "Ascension", description: "+100% passive income + +100% release bonus", effect: { type: "passive_bonus", pct: 100 } },
+];
+
+export type RebirthBonuses = {
+  passivePct: number;
+  releasePct: number;
+  cpPct: number;
+  extraBoardSlots: number;
+  extraCritChance: number;
+  extraComboWindowMs: number;
+  extraComboStacks: number;
+  surgeThresholdDelta: number;
+  megaThresholdDelta: number;
+};
+
+export function computeRebirthBonuses(rebirthCount: number): RebirthBonuses {
+  const n = Math.min(rebirthCount, REBIRTH_REWARDS.length);
+  let passivePct = 0, releasePct = 0, cpPct = 0;
+  let extraBoardSlots = 0, extraCritChance = 0;
+  let extraComboWindowMs = 0, extraComboStacks = 0;
+  let surgeThresholdDelta = 0, megaThresholdDelta = 0;
+
+  for (let i = 0; i < n; i++) {
+    const e = REBIRTH_REWARDS[i].effect;
+    if (e.type === "passive_bonus") passivePct += e.pct;
+    else if (e.type === "release_bonus") releasePct += e.pct;
+    else if (e.type === "cp_bonus") cpPct += e.pct;
+    else if (e.type === "max_circles") extraBoardSlots += e.extra;
+    else if (e.type === "crit_chance") extraCritChance += e.extra;
+    else if (e.type === "combo_window") extraComboWindowMs += e.extraMs;
+    else if (e.type === "combo_stacks") extraComboStacks += e.extra;
+    else if (e.type === "surge_threshold") surgeThresholdDelta += e.delta;
+    else if (e.type === "mega_threshold") megaThresholdDelta += e.delta;
+  }
+
+  // Rebirth 100 also gives +100% release (dual effect handled manually)
+  if (rebirthCount >= 100) releasePct += 100;
+
+  return { passivePct, releasePct, cpPct, extraBoardSlots, extraCritChance, extraComboWindowMs, extraComboStacks, surgeThresholdDelta, megaThresholdDelta };
+}

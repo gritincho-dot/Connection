@@ -60,6 +60,22 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 - Surge/Mega banners animate in from centre with spring + fade.
 - Primed glow ring (gold, r+13) on idle mult circles.
 
+### Upgrade Mode (v4)
+- Tapping a non-corrupted circle in Upgrade mode now increases its value by +1 (instead of rerolling).
+- Cost formula: Add = `60×1.2ⁿ + value`, Mult = `200×1.3ⁿ × value`, Exp = `1000×1.4ⁿ × value^value`.
+- `upgradeCircle(id)` in GameContext; `upgradeCostFor(circle)` helper.
+- `reRollCount` on CircleNode now tracks the number of upgrades applied.
+
+### CP Upgrades (v4)
+- Eternal Power and Eternal Multiplier are now infinite (no level cap).
+- Cheaper Upgrades remains capped at 5 levels.
+
+### Rebirth Rewards (v4)
+- 100 exclusive milestone rewards unlocked one per rebirth (up to rebirth 100).
+- `REBIRTH_REWARDS` array in `constants/game.ts`; `computeRebirthBonuses(count)` aggregates bonuses.
+- Bonuses applied throughout game: passive income, release %, CP gain %, extra board slots, crit chance, combo window/stacks, surge/mega thresholds.
+- Rebirth Milestones section in the Rebirth tab shows last unlocked + next upcoming reward.
+
 ### Technical
 - AsyncStorage key: `@circle-link/state-v5` (v4 → v5 due to chargedAt/lastUsedAt fields).
 - CircleNode new fields: `chargedAt: number | null`, `lastUsedAt: number | null`.

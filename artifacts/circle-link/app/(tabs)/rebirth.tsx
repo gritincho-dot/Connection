@@ -13,7 +13,7 @@ import {
 
 import { StatsBar } from "@/components/StatsBar";
 import { UpgradeRow } from "@/components/UpgradeRow";
-import { ACHIEVEMENTS } from "@/constants/game";
+import { ACHIEVEMENTS, REBIRTH_REWARDS } from "@/constants/game";
 import { useGame } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
 import { formatNum } from "@/lib/format";
@@ -186,10 +186,8 @@ export default function RebirthScreen() {
             costLabel="cp"
             costValue={costs.permPower}
             currency="cp"
-            affordable={
-              costs.permPower !== null && state.circlePoints >= costs.permPower
-            }
-            maxed={costs.permPower === null}
+            affordable={state.circlePoints >= costs.permPower}
+            maxed={false}
             onBuy={buyPermPower}
           />
           <UpgradeRow
@@ -201,10 +199,8 @@ export default function RebirthScreen() {
             costLabel="cp"
             costValue={costs.permMult}
             currency="cp"
-            affordable={
-              costs.permMult !== null && state.circlePoints >= costs.permMult
-            }
-            maxed={costs.permMult === null}
+            affordable={state.circlePoints >= costs.permMult}
+            maxed={false}
             onBuy={buyPermMult}
           />
           <UpgradeRow
@@ -223,6 +219,74 @@ export default function RebirthScreen() {
             maxed={costs.permDiscount === null}
             onBuy={buyPermDiscount}
           />
+        </View>
+
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            Rebirth Milestones
+          </Text>
+          {state.rebirthCount > 0 && state.rebirthCount <= REBIRTH_REWARDS.length ? (
+            <View
+              style={[
+                styles.rewardCard,
+                { backgroundColor: colors.card, borderColor: "#facc15" },
+              ]}
+            >
+              <View style={styles.rewardRow}>
+                <Feather name="star" size={14} color="#facc15" />
+                <Text style={[styles.rewardTitle, { color: "#facc15" }]}>
+                  Rebirth {state.rebirthCount} Reward Unlocked
+                </Text>
+              </View>
+              <Text style={[styles.rewardLabel, { color: colors.foreground }]}>
+                {REBIRTH_REWARDS[state.rebirthCount - 1].label}
+              </Text>
+              <Text style={[styles.rewardDesc, { color: colors.mutedForeground }]}>
+                {REBIRTH_REWARDS[state.rebirthCount - 1].description}
+              </Text>
+            </View>
+          ) : null}
+          {state.rebirthCount < REBIRTH_REWARDS.length ? (
+            <View
+              style={[
+                styles.rewardCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View style={styles.rewardRow}>
+                <Feather name="lock" size={14} color={colors.mutedForeground} />
+                <Text style={[styles.rewardTitle, { color: colors.mutedForeground }]}>
+                  Rebirth {state.rebirthCount + 1} Reward
+                </Text>
+              </View>
+              <Text style={[styles.rewardLabel, { color: colors.foreground }]}>
+                {REBIRTH_REWARDS[state.rebirthCount].label}
+              </Text>
+              <Text style={[styles.rewardDesc, { color: colors.mutedForeground }]}>
+                {REBIRTH_REWARDS[state.rebirthCount].description}
+              </Text>
+            </View>
+          ) : (
+            <View
+              style={[
+                styles.rewardCard,
+                { backgroundColor: colors.card, borderColor: "#facc15" },
+              ]}
+            >
+              <View style={styles.rewardRow}>
+                <Feather name="award" size={14} color="#facc15" />
+                <Text style={[styles.rewardTitle, { color: "#facc15" }]}>
+                  All 100 Rewards Unlocked
+                </Text>
+              </View>
+              <Text style={[styles.rewardDesc, { color: colors.mutedForeground }]}>
+                You have reached divine ascension. All milestone bonuses are active.
+              </Text>
+            </View>
+          )}
+          <Text style={[styles.rewardNote, { color: colors.mutedForeground }]}>
+            {state.rebirthCount} / 100 milestones unlocked
+          </Text>
         </View>
 
         <View style={styles.section}>
@@ -442,6 +506,37 @@ const styles = StyleSheet.create({
   statValue: {
     fontFamily: "Inter_700Bold",
     fontSize: 20,
+  },
+  rewardCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 14,
+    gap: 4,
+  },
+  rewardRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 2,
+  },
+  rewardTitle: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 11,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  rewardLabel: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 17,
+  },
+  rewardDesc: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+  },
+  rewardNote: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    textAlign: "center",
   },
   achievementsCard: {
     borderRadius: 14,
