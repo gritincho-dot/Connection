@@ -136,7 +136,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           c.x! > w - MARGIN ||
           c.y! < MARGIN ||
           c.y! > h - MARGIN);
-      if (unplaced && initializedIds.current.has(c.id)) continue;
       if (!unplaced && !outOfBounds) continue;
       initializedIds.current.add(c.id);
       const pos = randomSpot(w, h);

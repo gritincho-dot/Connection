@@ -193,6 +193,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [pendingAchievement, setPendingAchievement] = useState<string | null>(
     null,
   );
+  const achievementQueue = useRef<string[]>([]);
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -230,22 +231,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const enqueueAchievements = useCallback((ids: string[]) => {
     if (ids.length === 0) return;
-    // Show first one; others will appear after acknowledgement
-    setPendingAchievement((cur) => cur ?? ids[0]);
+    for (const id of ids) achievementQueue.current.push(id);
+    setPendingAchievement((cur) => {
+      if (cur !== null) return cur;
+      return achievementQueue.current.shift() ?? null;
+    });
   }, []);
 
   const acknowledgeAchievement = useCallback((id: string) => {
-    setPendingAchievement((cur) => (cur === id ? null : cur));
-    // Check if there are more pending — find any unlocked but not yet shown
-    setTimeout(() => {
-      const s = stateRef.current;
-      const next = ACHIEVEMENTS.find(
-        (a) => s.achievements.includes(a.id) && a.id !== id,
-      );
-      // We don't track shown vs unshown separately; achievements only fires once at unlock.
-      // No-op here.
-      void next;
-    }, 0);
+    const next = achievementQueue.current.shift() ?? null;
+    setPendingAchievement((cur) => (cur === id ? next : cur));
   }, []);
 
   const applyDiscount = useCallback((cost: number) => {
