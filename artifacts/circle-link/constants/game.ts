@@ -29,10 +29,10 @@ export const PERM_DISCOUNT_COST = (lvl: number): number | null =>
   lvl >= 5 ? null : Math.floor(3 * Math.pow(2, lvl));
 
 export const REBIRTH_THRESHOLD = (rb: number): number =>
-  Math.floor(50000 * Math.pow(8, rb));
+  Math.floor(25000 * Math.pow(6, rb));
 
 export const REBIRTH_GAIN = (totalEarned: number): number =>
-  Math.floor(Math.sqrt(totalEarned / 1000));
+  Math.floor(Math.sqrt(totalEarned / 500));
 
 // Per-level bonuses
 export const ENERGY_BONUS_PER_LVL = 0.12;
@@ -48,15 +48,15 @@ export const MAX_EXP = 2;
 export const MAX_TOTAL_CIRCLES = 10;
 
 // Exp circle exponent divisor: value/EXP_VALUE_DIVISOR controls how steep the power is
-export const EXP_VALUE_DIVISOR = 20;
+export const EXP_VALUE_DIVISOR = 14;
 
 // Combo system
 export const COMBO_WINDOW_MS = 3000;
-export const COMBO_BONUS_PER_STACK = 0.05;
-export const COMBO_MAX_STACKS = 6;
+export const COMBO_BONUS_PER_STACK = 0.10;
+export const COMBO_MAX_STACKS = 8;
 
 // Crit
-export const CRIT_CHANCE = 0.05;
+export const CRIT_CHANCE = 0.08;
 export const CRIT_MULTIPLIER = 2;
 
 // Streak
@@ -75,7 +75,7 @@ export const MULT_DECAY_MS = 120_000;
 export const EXP_DECAY_MS = 90_000;
 
 // Probability that a newly spawned circle is corrupted
-export const CORRUPT_CHANCE = 0.15;
+export const CORRUPT_CHANCE = 0.08;
 
 // Corrupted circles that appear in a chain reduce the release by this factor
 export const CORRUPT_PENALTY = 0.30;
@@ -85,12 +85,12 @@ export const CORRUPT_PENALTY = 0.30;
 export const MULT_EXHAUST_MS = 7_000;
 
 // Mult circles idle for this long (since last use or purchase) become "primed" → bonus
-export const PRIME_IDLE_MS = 12_000;
-export const PRIME_BONUS = 0.25; // +25% effective multiplier when primed
+export const PRIME_IDLE_MS = 10_000;
+export const PRIME_BONUS = 0.40; // +40% effective multiplier when primed
 
 // When an exp circle fires in a release, add circles in that chain are
 // destroyed — but the release earns this bonus multiplier as compensation
-export const EXP_AOE_BONUS = 1.8;
+export const EXP_AOE_BONUS = 2.2;
 
 // Point cost to cleanse (de-corrupt) a circle
 export const CLEANSE_COST_ADD = 200;
@@ -101,10 +101,10 @@ export const CLEANSE_COST_EXP = 35_000;
 export const EXPIRE_VALUE_FRACTION = 0.5;
 
 // Passive income: awarded per second = sum(circle.value) * this rate
-export const PASSIVE_INCOME_RATE = 0.2;
+export const PASSIVE_INCOME_RATE = 0.3;
 
 // Minimum ms between solo taps (single-circle tap when board has only one circle)
-export const SOLO_TAP_COOLDOWN_MS = 3_000;
+export const SOLO_TAP_COOLDOWN_MS = 800;
 
 // Chain reaction: unlocked when rebirthCount >= 1
 export const CHAIN_REACTION_CHANCE = 0.28;
