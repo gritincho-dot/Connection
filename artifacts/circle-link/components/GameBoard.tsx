@@ -102,6 +102,34 @@ function randomSpot(w: number, h: number): { x: number; y: number } {
   };
 }
 
+/**
+ * Pick a position that maximises the minimum distance to all already-placed
+ * circles by trying `attempts` random candidates and keeping the best one.
+ */
+function spreadSpot(
+  w: number,
+  h: number,
+  placed: Array<{ x: number; y: number }>,
+  attempts = 60,
+): { x: number; y: number } {
+  if (placed.length === 0) return randomSpot(w, h);
+  let best = randomSpot(w, h);
+  let bestDist = 0;
+  for (let i = 0; i < attempts; i++) {
+    const candidate = randomSpot(w, h);
+    let minDist = Infinity;
+    for (const p of placed) {
+      const d = Math.hypot(candidate.x - p.x, candidate.y - p.y);
+      if (d < minDist) minDist = d;
+    }
+    if (minDist > bestDist) {
+      bestDist = minDist;
+      best = candidate;
+    }
+  }
+  return best;
+}
+
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
@@ -157,14 +185,20 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     prevCircleCountRef.current = curr;
 
     if (curr > prev && prev > 0) {
-      // New circle bought — scatter every circle to a new random spot
+      // New circle bought — scatter every circle using spread placement
+      const placed: Array<{ x: number; y: number }> = [];
       for (const c of state.circles) {
         initializedIds.current.add(c.id);
-        const pos = randomSpot(w, h);
+        const pos = spreadSpot(w, h, placed);
+        placed.push(pos);
         moveCircle(c.id, pos.x, pos.y);
       }
     } else {
       // Normal init: place only unpositioned or out-of-bounds circles
+      // Build a list of already-placed positions to spread new ones away from them
+      const placed: Array<{ x: number; y: number }> = state.circles
+        .filter((c) => c.x !== undefined && c.y !== undefined)
+        .map((c) => ({ x: c.x!, y: c.y! }));
       for (const c of state.circles) {
         const unplaced = c.x === undefined || c.y === undefined;
         const outOfBounds =
@@ -172,7 +206,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           (c.x! < MARGIN || c.x! > w - MARGIN || c.y! < MARGIN || c.y! > h - MARGIN);
         if (!unplaced && !outOfBounds) continue;
         initializedIds.current.add(c.id);
-        const pos = randomSpot(w, h);
+        const pos = spreadSpot(w, h, placed);
+        placed.push(pos);
         moveCircle(c.id, pos.x, pos.y);
       }
     }
@@ -425,8 +460,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
   const scatterAllCircles = useCallback(() => {
     if (!boardSize) return;
     const { w, h } = boardSize;
+    const placed: Array<{ x: number; y: number }> = [];
     for (const c of circlesRef.current) {
-      const pos = randomSpot(w, h);
+      const pos = spreadSpot(w, h, placed);
+      placed.push(pos);
       moveCircle(c.id, pos.x, pos.y);
     }
   }, [boardSize, moveCircle]);

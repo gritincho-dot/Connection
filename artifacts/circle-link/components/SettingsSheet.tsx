@@ -206,18 +206,10 @@ export function SettingsSheet({
                 exitToMenu();
                 router.replace("/");
               }}
-              style={[
-                styles.actionBtn,
-                {
-                  backgroundColor: colors.background,
-                  borderColor: colors.border,
-                },
-              ]}
+              style={[styles.mainMenuBtn]}
             >
-              <Feather name="home" size={16} color={colors.foreground} />
-              <Text style={[styles.actionText, { color: colors.foreground }]}>
-                Return to Menu
-              </Text>
+              <Feather name="home" size={16} color="#fff" />
+              <Text style={styles.mainMenuText}>Main Menu</Text>
             </Pressable>
           </View>
         </Pressable>
@@ -309,5 +301,21 @@ const styles = StyleSheet.create({
   actionText: {
     fontFamily: "Inter_600SemiBold",
     fontSize: 14,
+  },
+  mainMenuBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    borderRadius: 12,
+    backgroundColor: "#1a1a1a",
+  },
+  mainMenuText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 14,
+    color: "#fff",
+    letterSpacing: 0.2,
   },
 });

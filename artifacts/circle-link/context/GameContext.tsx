@@ -84,15 +84,9 @@ export type CircleNode = {
 
 // ── Exported circle-state helpers ──────────────────────────────────────────
 
-/** Decayed effective value for mult/exp circles; add circles return their raw value. */
-export function effectiveValue(c: CircleNode, now: number): number {
-  if (c.chargedAt === null) return c.value; // permanent starting circle
-  if (c.type === "add") return c.value;     // add circles don't decay
-  const decayMs = c.type === "mult" ? MULT_DECAY_MS : EXP_DECAY_MS;
-  const minVal = c.type === "mult" ? 2 : 1;
-  const elapsed = Math.max(0, now - c.chargedAt);
-  const fraction = Math.max(0, 1 - elapsed / decayMs);
-  return Math.max(minVal, Math.ceil(c.value * fraction));
+/** Returns the circle's value. Decay is disabled — values are permanent. */
+export function effectiveValue(c: CircleNode, _now: number): number {
+  return c.value;
 }
 
 /** True when a mult circle has been idle long enough to be primed for a bonus. */
