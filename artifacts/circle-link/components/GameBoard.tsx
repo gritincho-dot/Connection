@@ -24,6 +24,7 @@ import {
   CIRCLE_TTL_MS,
   EXP_VALUE_DIVISOR,
   MULT_EXHAUST_MS,
+  SOLO_TAP_COOLDOWN_MS,
 } from "@/constants/game";
 import {
   type CircleNode,
@@ -126,6 +127,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     computeRelease,
     computeReleaseStepwise,
     releaseChain,
+    releaseSolo,
     moveCircle,
     reRollCircle,
     cleanseCircle,
@@ -188,6 +190,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
   // Tap tracking for upgrade mode
   const tapStartRef = useRef<{ x: number; y: number; circleId: string } | null>(null);
+
+  // Solo tap: track touch start position and last fire time for cooldown
+  const soloTapStartRef = useRef<{ x: number; y: number } | null>(null);
+  const lastSoloTapRef = useRef<number>(0);
 
   // Pinch tracking
   const pinchInit = useRef<{ dist: number; startScale: number } | null>(null);
@@ -388,6 +394,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           }
 
           // play mode
+          soloTapStartRef.current = { x, y };
           setPointer({ x, y });
           const hit = findCircleAt(x, y);
           if (hit && !isExhausted(hit)) {
@@ -513,7 +520,43 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           }
 
           // play mode release
+          const releaseX = evt.nativeEvent.locationX;
+          const releaseY = evt.nativeEvent.locationY;
+          const startPos = soloTapStartRef.current;
+          soloTapStartRef.current = null;
+
           const cur = chainRef.current;
+
+          // Solo tap: if there is exactly one non-exhausted circle and the user
+          // tapped (no drag) on it, fire it with a cooldown to prevent spam
+          const interactable = circlesRef.current.filter((c) => !isExhausted(c));
+          if (
+            cur.length <= 1 &&
+            interactable.length === 1 &&
+            startPos !== null &&
+            Math.hypot(releaseX - startPos.x, releaseY - startPos.y) < 14
+          ) {
+            const now = Date.now();
+            if (now - lastSoloTapRef.current >= SOLO_TAP_COOLDOWN_MS) {
+              const hit = findCircleAt(releaseX, releaseY);
+              if (hit && hit.id === interactable[0].id) {
+                lastSoloTapRef.current = now;
+                const earned = releaseSolo(hit.id);
+                if (earned > 0) {
+                  flashEarning(earned, false);
+                  triggerHaptic("heavy");
+                  sound.play("pop", 0.85);
+                  setTimeout(() => sound.play("chaching", 0.9), 80);
+                  if (hit.x !== undefined && hit.y !== undefined)
+                    spawnParticles(hit.x, hit.y, colorForType(hit.type), 8);
+                }
+              }
+            }
+            setPointer(null);
+            setChain([]);
+            return;
+          }
+
           if (cur.length >= 2) {
             const info = releaseChain(cur);
             if (info.earned > 0) {
@@ -562,6 +605,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           setChain([]);
           setDrag(null);
           tapStartRef.current = null;
+          soloTapStartRef.current = null;
           isPinchingRef.current = false;
           pinchInit.current = null;
         },
@@ -576,6 +620,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
       cleanseCircle,
       removeCircle,
       releaseChain,
+      releaseSolo,
       flashEarning,
       triggerExpFlash,
       triggerChainReact,
@@ -593,6 +638,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     setPointer(null);
     setDrag(null);
     tapStartRef.current = null;
+    soloTapStartRef.current = null;
   }, [mode]);
 
   const liveRate = chain.length >= 2 ? computeRelease(chain) : 0;
@@ -607,6 +653,13 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     }
     return parts.join(" ");
   }, [chain]);
+
+  // Whether solo tap is possible this render (1 interactable circle and off cooldown)
+  const soloTapReady = useMemo(() => {
+    if (mode !== "play") return false;
+    const interactable = state.circles.filter((c) => !isExhausted(c));
+    return interactable.length === 1;
+  }, [mode, state.circles, tick]);
 
   const renderPos = useCallback(
     (c: CircleNode): { x: number; y: number } | null => {
@@ -995,7 +1048,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
               ? "Drag to move • Tap × to remove • Pinch to zoom"
               : mode === "upgrade"
                 ? "Tap to re-roll • Tap ⚠ circles to cleanse"
-                : "Swipe to chain, release to earn • Exp💥 destroys adds"}
+                : soloTapReady
+                  ? "Only one circle — tap it to score (3 s cooldown)"
+                  : "Swipe to chain, release to earn • Exp💥 destroys adds"}
           </Text>
         </View>
       </View>

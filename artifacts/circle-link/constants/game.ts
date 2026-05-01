@@ -5,19 +5,19 @@ export const ADD_COST = (cnt: number): number =>
   Math.floor(75 * Math.pow(3.5, cnt));
 
 export const MULT_COST = (cnt: number): number =>
-  Math.floor(900 * Math.pow(5.5, cnt));
+  Math.floor(550 * Math.pow(4.0, cnt));
 
 export const EXP_COST = (cnt: number): number =>
-  Math.floor(20000 * Math.pow(18, cnt));
+  Math.floor(12000 * Math.pow(12, cnt));
 
 export const REROLL_COST_ADD = (n: number): number =>
   Math.floor(40 * Math.pow(1.7, n));
 
 export const REROLL_COST_MULT = (n: number): number =>
-  Math.floor(400 * Math.pow(1.7, n));
+  Math.floor(250 * Math.pow(1.7, n));
 
 export const REROLL_COST_EXP = (n: number): number =>
-  Math.floor(6000 * Math.pow(1.7, n));
+  Math.floor(3500 * Math.pow(1.7, n));
 
 export const PERM_POWER_COST = (lvl: number): number | null =>
   lvl >= 10 ? null : Math.floor(1 * Math.pow(2, lvl));
@@ -75,16 +75,26 @@ export const CORRUPT_CHANCE = 0.15;
 export const CORRUPT_PENALTY = 0.30;
 
 // How long a mult circle is exhausted after being used in a release (ms)
-export const MULT_EXHAUST_MS = 12_000;
+export const MULT_EXHAUST_MS = 7_000;
 
 // When an exp circle fires in a release, add circles in that chain are
 // destroyed — but the release earns this bonus multiplier as compensation
 export const EXP_AOE_BONUS = 1.8;
 
 // Point cost to cleanse (de-corrupt) a circle
-export const CLEANSE_COST_ADD = 300;
-export const CLEANSE_COST_MULT = 3_000;
-export const CLEANSE_COST_EXP = 60_000;
+export const CLEANSE_COST_ADD = 200;
+export const CLEANSE_COST_MULT = 1_800;
+export const CLEANSE_COST_EXP = 35_000;
+
+// Fraction of a circle's value awarded when it expires naturally
+export const EXPIRE_VALUE_FRACTION = 0.5;
+
+// Passive income: awarded per second = sum(circle.value) * this rate
+export const PASSIVE_INCOME_RATE = 0.2;
+
+// Minimum ms between solo taps (single-circle tap when board has only one
+// interactable circle) — prevents spam
+export const SOLO_TAP_COOLDOWN_MS = 3_000;
 
 // Chain reaction: unlocked when rebirthCount >= 1
 export const CHAIN_REACTION_CHANCE = 0.28;

@@ -28,6 +28,7 @@ import {
   DISCOUNT_PER_LVL,
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
+  EXPIRE_VALUE_FRACTION,
   EXP_AOE_BONUS,
   EXP_COST,
   EXP_VALUE_DIVISOR,
@@ -37,6 +38,7 @@ import {
   MAX_TOTAL_CIRCLES,
   MULT_EXHAUST_MS,
   MULT_COST,
+  PASSIVE_INCOME_RATE,
   PERM_DISCOUNT_COST,
   PERM_MULT_BONUS,
   PERM_MULT_COST,
@@ -181,6 +183,7 @@ type Ctx = {
   computeRelease: (chain: CircleNode[]) => number;
   computeReleaseStepwise: (chain: CircleNode[]) => number[];
   releaseChain: (chain: CircleNode[]) => ReleaseInfo;
+  releaseSolo: (circleId: string) => number;
   buyEnergy: () => boolean;
   addCircle: (type: CircleType) => boolean;
   reRollCircle: (id: string) => boolean;
@@ -279,8 +282,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [state, loaded]);
 
-  // ── Expiry interval ─────────────────────────────────────────────────────────
-  // Every second, remove circles whose expiresAt has passed
+  // ── Expiry + passive income interval ────────────────────────────────────────
+  // Every second: remove expired circles (awarding 50% value) and grant passive income
   useEffect(() => {
     if (!loaded) return;
     const id = setInterval(() => {
@@ -289,13 +292,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         const expired = s.circles.filter(
           (c) => c.expiresAt !== null && now >= c.expiresAt,
         );
-        if (expired.length === 0) return s;
-        return {
+        // 50% payout per expired circle
+        const expiryPayout = expired.reduce(
+          (sum, c) => sum + Math.floor(c.value * EXPIRE_VALUE_FRACTION),
+          0,
+        );
+
+        // Passive income: 20% of total circle value per second
+        const totalCircleValue = s.circles.reduce((sum, c) => sum + c.value, 0);
+        const passiveIncome = Math.floor(totalCircleValue * PASSIVE_INCOME_RATE);
+
+        const gained = expiryPayout + passiveIncome;
+
+        const updated = {
           ...s,
+          points: s.points + gained,
+          totalEarnedThisRun: s.totalEarnedThisRun + gained,
+          totalLifetime: s.totalLifetime + gained,
           circles: s.circles.filter(
             (c) => c.expiresAt === null || now < c.expiresAt,
           ),
         };
+        return updated;
       });
     }, 1000);
     return () => clearInterval(id);
@@ -535,6 +553,30 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     },
     [computeReleaseStepwise, enqueueAchievements],
   );
+
+  // Solo tap: release a single circle's value (no chain bonuses, no combo/crit)
+  const releaseSolo = useCallback((circleId: string): number => {
+    let earned = 0;
+    setState((s) => {
+      const circle = s.circles.find((c) => c.id === circleId);
+      if (!circle) return s;
+      const payout = Math.floor(
+        circle.value *
+          (1 + s.energyLevel * ENERGY_BONUS_PER_LVL) *
+          (1 + s.permPower * PERM_POWER_BONUS),
+      );
+      earned = payout;
+      return {
+        ...s,
+        points: s.points + payout,
+        totalEarnedThisRun: s.totalEarnedThisRun + payout,
+        totalLifetime: s.totalLifetime + payout,
+        totalReleases: s.totalReleases + 1,
+        bestSingleEarning: Math.max(s.bestSingleEarning, payout),
+      };
+    });
+    return earned;
+  }, []);
 
   const buyEnergy = useCallback(() => {
     let ok = false;
@@ -785,6 +827,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     computeRelease,
     computeReleaseStepwise,
     releaseChain,
+    releaseSolo,
     buyEnergy,
     addCircle,
     reRollCircle,
