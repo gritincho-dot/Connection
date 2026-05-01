@@ -27,7 +27,6 @@ import {
   DISCOUNT_PER_LVL,
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
-  EXP_AOE_BONUS,
   EXP_COST,
   EXP_DECAY_MS,
   EXP_VALUE_DIVISOR,
@@ -420,10 +419,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (chain.length >= SURGE_THRESHOLD) result *= 1 + SURGE_BONUS;
       if (chain.length >= MEGA_THRESHOLD) result *= 1 + MEGA_BONUS;
 
-      // Exp AOE bonus preview
-      const hasExp = chain.some((c) => c.type === "exp");
-      if (hasExp) result *= EXP_AOE_BONUS;
-
       result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
       result *= 1 + s.permPower * PERM_POWER_BONUS;
 
@@ -481,10 +476,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           (c) => c.type === "mult" && isPrimed(c, now),
         );
 
-        // Exp AOE: does this chain include an exp circle?
-        const hasExp = chain.some((c) => c.type === "exp");
-        if (hasExp) result *= EXP_AOE_BONUS;
-
         result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
         result *= 1 + s.permPower * PERM_POWER_BONUS;
 
@@ -503,17 +494,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           ? Math.floor(earned * CHAIN_REACTION_BONUS) : 0;
         if (chainReactionTriggered) earned += chainReactionBonus;
 
-        // Exp AOE: destroy all add circles in the chain
-        const chainAddIds = new Set(
-          chain.filter((c) => c.type === "add").map((c) => c.id),
-        );
-        const circlesDestroyed = hasExp ? chainAddIds.size : 0;
-
         // Mult circles: record last use time (for primed detection)
         const multIdsInChain = new Set(chain.filter((c) => c.type === "mult").map((c) => c.id));
 
         const updatedCircles = s.circles
-          .filter((c) => !(hasExp && chainAddIds.has(c.id)))
           .map((c) => {
             if (multIdsInChain.has(c.id))
               return { ...c, lastUsedAt: now };
@@ -536,7 +520,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         // Unlock achievements
         const unlocked = checkAchievements({ ...next, achievements: s.achievements });
         if (crit && !s.achievements.includes("crit")) unlocked.push("crit");
-        if (hasExp && !s.achievements.includes("expburst")) unlocked.push("expburst");
         if (chainReactionTriggered && !s.achievements.includes("chainreact")) unlocked.push("chainreact");
         if (hasSurge && !s.achievements.includes("surge")) unlocked.push("surge");
         if (hasMega && !s.achievements.includes("megasurge")) unlocked.push("megasurge");
@@ -547,8 +530,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           earned, baseEarned, crit,
           comboCount: newCombo,
           newAchievements: unlocked,
-          expAOE: hasExp,
-          circlesDestroyed,
+          expAOE: false,
+          circlesDestroyed: 0,
           chainReaction: chainReactionTriggered,
           chainReactionBonus,
           surge: hasSurge,

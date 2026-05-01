@@ -2,13 +2,13 @@ export const ENERGY_COST = (lvl: number): number =>
   Math.floor(25 * Math.pow(1.55, lvl));
 
 export const ADD_COST = (cnt: number): number =>
-  Math.floor(75 * Math.pow(3.5, cnt));
+  Math.floor(40 * Math.pow(2.8, cnt));
 
 export const MULT_COST = (cnt: number): number =>
-  Math.floor(550 * Math.pow(4.0, cnt));
+  Math.floor(300 * Math.pow(3.2, cnt));
 
 export const EXP_COST = (cnt: number): number =>
-  Math.floor(12000 * Math.pow(12, cnt));
+  Math.floor(5000 * Math.pow(8, cnt));
 
 export const REROLL_COST_ADD = (n: number): number =>
   Math.floor(40 * Math.pow(1.7, n));
@@ -29,7 +29,7 @@ export const PERM_DISCOUNT_COST = (lvl: number): number | null =>
   lvl >= 5 ? null : Math.floor(3 * Math.pow(2, lvl));
 
 export const REBIRTH_THRESHOLD = (rb: number): number =>
-  Math.floor(25000 * Math.pow(6, rb));
+  Math.floor(12000 * Math.pow(5, rb));
 
 export const REBIRTH_GAIN = (totalEarned: number): number =>
   Math.floor(Math.sqrt(totalEarned / 500));
@@ -66,16 +66,16 @@ export const STREAK_BONUS_PER_EXTRA = 0.12;
 // ─── Challenge mechanics ─────────────────────────────────────────────────────
 
 // Add circles: hard expiry (ms) — they're cheap so they pop quickly
-export const CIRCLE_TTL_MS = 45_000;
+export const CIRCLE_TTL_MS = 90_000;
 
 // Mult circles: gradual value decay over this duration (ms), ending at ×2 minimum
-export const MULT_DECAY_MS = 120_000;
+export const MULT_DECAY_MS = 200_000;
 
 // Exp circles: gradual value decay over this duration (ms), ending at ^1 minimum
-export const EXP_DECAY_MS = 90_000;
+export const EXP_DECAY_MS = 150_000;
 
 // Probability that a newly spawned circle is corrupted
-export const CORRUPT_CHANCE = 0.08;
+export const CORRUPT_CHANCE = 0.04;
 
 // Corrupted circles that appear in a chain reduce the release by this factor
 export const CORRUPT_PENALTY = 0.30;
@@ -88,10 +88,6 @@ export const MULT_EXHAUST_MS = 7_000;
 export const PRIME_IDLE_MS = 10_000;
 export const PRIME_BONUS = 0.40; // +40% effective multiplier when primed
 
-// When an exp circle fires in a release, add circles in that chain are
-// destroyed — but the release earns this bonus multiplier as compensation
-export const EXP_AOE_BONUS = 2.2;
-
 // Point cost to cleanse (de-corrupt) a circle
 export const CLEANSE_COST_ADD = 200;
 export const CLEANSE_COST_MULT = 1_800;
@@ -101,7 +97,7 @@ export const CLEANSE_COST_EXP = 35_000;
 export const EXPIRE_VALUE_FRACTION = 0.5;
 
 // Passive income: awarded per second = sum(circle.value) * this rate
-export const PASSIVE_INCOME_RATE = 0.3;
+export const PASSIVE_INCOME_RATE = 0.5;
 
 // Minimum ms between solo taps (single-circle tap when board has only one circle)
 export const SOLO_TAP_COOLDOWN_MS = 800;
@@ -137,7 +133,6 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "rebirth1", label: "Reborn", description: "Rebirth for the first time" },
   { id: "energy5", label: "Charged", description: "Reach Connection Energy 5" },
   { id: "chainreact", label: "Aftershock", description: "Trigger a chain reaction" },
-  { id: "expburst", label: "Supernova", description: "Trigger an exp AOE wipe" },
   { id: "surge", label: "Surge", description: "Build a 5-circle chain" },
   { id: "megasurge", label: "Mega Surge", description: "Build a 7-circle chain" },
   { id: "primed", label: "Patience Pays", description: "Trigger a primed multiplier" },

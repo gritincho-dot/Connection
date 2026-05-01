@@ -1161,7 +1161,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 ? "Tap to re-roll • Tap ⚠ circles to cleanse"
                 : soloTapReady
                   ? "Only one circle — tap it to score (3 s cooldown)"
-                  : "Swipe to chain, release to earn • Exp💥 destroys adds"}
+                  : "Swipe to chain, release to earn"}
           </Text>
         </View>
       </View>
