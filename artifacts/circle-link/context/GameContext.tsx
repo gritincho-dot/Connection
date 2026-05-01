@@ -244,6 +244,8 @@ type Ctx = {
   canRebirth: boolean;
   boardFull: boolean;
   loaded: boolean;
+  generateProgressCode: () => string;
+  restoreFromCode: (code: string) => boolean;
 };
 
 export const GameContext = createContext<Ctx | null>(null);
@@ -876,6 +878,73 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     if (slotKey) await AsyncStorage.removeItem(slotKey);
   }, [slotKey]);
 
+  const generateProgressCode = useCallback((): string => {
+    const s = stateRef.current;
+    const payload = {
+      v: 1,
+      p: s.points,
+      te: s.totalEarnedThisRun,
+      tl: s.totalLifetime,
+      el: s.energyLevel,
+      ci: s.circles,
+      cp: s.circlePoints,
+      pp: s.permPower,
+      pm: s.permMult,
+      pd: s.permDiscount,
+      rc: s.rebirthCount,
+      bc: s.bestChainLength,
+      bs: s.bestSingleEarning,
+      tr: s.totalReleases,
+      ac: s.achievements,
+      hw: s.hasWon,
+      st: s.settings,
+    };
+    const json = JSON.stringify(payload);
+    const encoded = btoa(unescape(encodeURIComponent(json)));
+    let sum = 0;
+    for (let i = 0; i < json.length; i++) sum = (sum + json.charCodeAt(i)) & 0xffff;
+    return `CL-${encoded}-${sum.toString(16).padStart(4, "0").toUpperCase()}`;
+  }, []);
+
+  const restoreFromCode = useCallback((code: string): boolean => {
+    try {
+      const stripped = code.trim();
+      if (!stripped.startsWith("CL-")) return false;
+      const dashIdx = stripped.lastIndexOf("-");
+      if (dashIdx <= 2) return false;
+      const checkHex = stripped.slice(dashIdx + 1);
+      const encoded = stripped.slice(3, dashIdx);
+      const json = decodeURIComponent(escape(atob(encoded)));
+      let sum = 0;
+      for (let i = 0; i < json.length; i++) sum = (sum + json.charCodeAt(i)) & 0xffff;
+      if (sum.toString(16).padStart(4, "0").toUpperCase() !== checkHex.toUpperCase()) return false;
+      const p = JSON.parse(json) as Record<string, unknown>;
+      if (p.v !== 1) return false;
+      setState((s) => ({
+        ...s,
+        points: typeof p.p === "number" ? p.p : s.points,
+        totalEarnedThisRun: typeof p.te === "number" ? p.te : s.totalEarnedThisRun,
+        totalLifetime: typeof p.tl === "number" ? p.tl : s.totalLifetime,
+        energyLevel: typeof p.el === "number" ? p.el : s.energyLevel,
+        circles: Array.isArray(p.ci) ? (p.ci as typeof s.circles) : s.circles,
+        circlePoints: typeof p.cp === "number" ? p.cp : s.circlePoints,
+        permPower: typeof p.pp === "number" ? p.pp : s.permPower,
+        permMult: typeof p.pm === "number" ? p.pm : s.permMult,
+        permDiscount: typeof p.pd === "number" ? p.pd : s.permDiscount,
+        rebirthCount: typeof p.rc === "number" ? p.rc : s.rebirthCount,
+        bestChainLength: typeof p.bc === "number" ? p.bc : s.bestChainLength,
+        bestSingleEarning: typeof p.bs === "number" ? p.bs : s.bestSingleEarning,
+        totalReleases: typeof p.tr === "number" ? p.tr : s.totalReleases,
+        achievements: Array.isArray(p.ac) ? (p.ac as string[]) : s.achievements,
+        hasWon: typeof p.hw === "boolean" ? p.hw : s.hasWon,
+        settings: p.st && typeof p.st === "object" ? { ...s.settings, ...(p.st as Partial<typeof s.settings>) } : s.settings,
+      }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const setSoundEnabled = useCallback((v: boolean) => {
     setState((s) => ({ ...s, settings: { ...s.settings, soundEnabled: v } }));
   }, []);
@@ -947,6 +1016,8 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     canRebirth,
     boardFull,
     loaded,
+    generateProgressCode,
+    restoreFromCode,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

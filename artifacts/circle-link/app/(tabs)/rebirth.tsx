@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Platform,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 
@@ -30,7 +31,62 @@ export default function RebirthScreen() {
     buyPermPower,
     buyPermMult,
     buyPermDiscount,
+    generateProgressCode,
+    restoreFromCode,
   } = useGame();
+
+  const [generatedCode, setGeneratedCode] = useState<string | null>(null);
+  const [restoreInput, setRestoreInput] = useState("");
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied">("idle");
+  const [restoreStatus, setRestoreStatus] = useState<"idle" | "ok" | "err">("idle");
+
+  const handleGenerate = () => {
+    const code = generateProgressCode();
+    setGeneratedCode(code);
+    setCopyStatus("idle");
+    setRestoreStatus("idle");
+  };
+
+  const handleCopy = async () => {
+    if (!generatedCode) return;
+    try {
+      await navigator.clipboard.writeText(generatedCode);
+      setCopyStatus("copied");
+      setTimeout(() => setCopyStatus("idle"), 2000);
+    } catch {
+      // fallback: select the text manually
+    }
+  };
+
+  const handleRestore = () => {
+    if (!restoreInput.trim()) return;
+    const doRestore = () => {
+      const ok = restoreFromCode(restoreInput.trim());
+      setRestoreStatus(ok ? "ok" : "err");
+      if (ok) {
+        setRestoreInput("");
+        setGeneratedCode(null);
+        setTimeout(() => setRestoreStatus("idle"), 3000);
+      } else {
+        setTimeout(() => setRestoreStatus("idle"), 3000);
+      }
+    };
+    if (Platform.OS === "web") {
+      const ok = window.confirm(
+        "Restore progress from code? This will overwrite your current save.",
+      );
+      if (ok) doRestore();
+    } else {
+      Alert.alert(
+        "Restore Progress?",
+        "This will overwrite your current save with the progress from the code.",
+        [
+          { text: "Cancel", style: "cancel" },
+          { text: "Restore", style: "destructive", onPress: doRestore },
+        ],
+      );
+    }
+  };
 
   const onRebirth = () => {
     if (!canRebirth) return;
@@ -375,6 +431,129 @@ export default function RebirthScreen() {
             })}
           </View>
         </View>
+
+        {/* ── Progress Code ─────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
+            Progress Backup
+          </Text>
+          <View
+            style={[
+              styles.codeCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.codeDesc, { color: colors.mutedForeground }]}>
+              Generate a code to save your progress. If your save is ever lost, paste it back here to recover.
+            </Text>
+
+            {/* Generate row */}
+            <View style={styles.codeRow}>
+              <Pressable
+                onPress={handleGenerate}
+                style={[styles.codeBtn, { backgroundColor: colors.accent }]}
+              >
+                <Feather name="download" size={14} color="#fff" />
+                <Text style={styles.codeBtnText}>Generate Code</Text>
+              </Pressable>
+            </View>
+
+            {/* Generated code display */}
+            {generatedCode ? (
+              <View style={styles.codeOutputWrap}>
+                <TextInput
+                  style={[
+                    styles.codeOutput,
+                    { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background },
+                  ]}
+                  value={generatedCode}
+                  editable={false}
+                  multiline
+                  selectTextOnFocus
+                />
+                <Pressable
+                  onPress={handleCopy}
+                  style={[
+                    styles.copyBtn,
+                    { backgroundColor: copyStatus === "copied" ? "#16a34a" : colors.border },
+                  ]}
+                >
+                  <Feather
+                    name={copyStatus === "copied" ? "check" : "copy"}
+                    size={14}
+                    color={copyStatus === "copied" ? "#fff" : colors.foreground}
+                  />
+                  <Text
+                    style={[
+                      styles.copyBtnText,
+                      { color: copyStatus === "copied" ? "#fff" : colors.foreground },
+                    ]}
+                  >
+                    {copyStatus === "copied" ? "Copied!" : "Copy"}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+
+            {/* Divider */}
+            <View style={[styles.codeDivider, { backgroundColor: colors.border }]} />
+
+            {/* Restore row */}
+            <Text style={[styles.restoreLabel, { color: colors.mutedForeground }]}>
+              Restore from code
+            </Text>
+            <TextInput
+              style={[
+                styles.restoreInput,
+                {
+                  color: colors.foreground,
+                  borderColor:
+                    restoreStatus === "err"
+                      ? "#ef4444"
+                      : restoreStatus === "ok"
+                        ? "#16a34a"
+                        : colors.border,
+                  backgroundColor: colors.background,
+                },
+              ]}
+              placeholder="Paste your CL-... code here"
+              placeholderTextColor={colors.mutedForeground}
+              value={restoreInput}
+              onChangeText={(t) => { setRestoreInput(t); setRestoreStatus("idle"); }}
+              multiline
+              autoCorrect={false}
+              autoCapitalize="none"
+            />
+            {restoreStatus !== "idle" ? (
+              <Text
+                style={[
+                  styles.restoreFeedback,
+                  { color: restoreStatus === "ok" ? "#16a34a" : "#ef4444" },
+                ]}
+              >
+                {restoreStatus === "ok"
+                  ? "Progress restored successfully!"
+                  : "Invalid or corrupted code. Please check and try again."}
+              </Text>
+            ) : null}
+            <Pressable
+              onPress={handleRestore}
+              style={[
+                styles.codeBtn,
+                {
+                  backgroundColor: restoreInput.trim()
+                    ? "#dc2626"
+                    : colors.border,
+                  opacity: restoreInput.trim() ? 1 : 0.5,
+                },
+              ]}
+              disabled={!restoreInput.trim()}
+            >
+              <Feather name="upload" size={14} color="#fff" />
+              <Text style={styles.codeBtnText}>Restore Progress</Text>
+            </Pressable>
+          </View>
+        </View>
       </ScrollView>
     </View>
   );
@@ -563,5 +742,77 @@ const styles = StyleSheet.create({
     fontSize: 10,
     letterSpacing: 0.6,
     textTransform: "uppercase",
+  },
+  codeCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
+  },
+  codeDesc: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  codeRow: {
+    flexDirection: "row",
+  },
+  codeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+  },
+  codeBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
+    color: "#fff",
+  },
+  codeOutputWrap: {
+    gap: 8,
+  },
+  codeOutput: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 60,
+  },
+  copyBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+  },
+  copyBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+  },
+  codeDivider: {
+    height: 1,
+    marginVertical: 2,
+  },
+  restoreLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+    letterSpacing: 0.3,
+  },
+  restoreInput: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 11,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 60,
+  },
+  restoreFeedback: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
   },
 });
