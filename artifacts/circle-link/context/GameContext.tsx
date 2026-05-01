@@ -698,6 +698,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             : now + EXP_DECAY_MS;
       // chargedAt enables decay computation for mult/exp; add circles don't decay
       const chargedAt = type !== "add" ? now : null;
+      // Value increases by 1 per purchase: add starts at 2, mult at 2, exp at 1
+      const nextValue =
+        type === "add" ? count + 2 : type === "mult" ? count + 2 : count + 1;
       return {
         ...s,
         points: s.points - cost,
@@ -706,7 +709,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           {
             id: newId(type),
             type,
-            value: randVal(type),
+            value: nextValue,
             reRollCount: 0,
             expiresAt,
             corrupted,

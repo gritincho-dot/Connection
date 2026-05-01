@@ -3,7 +3,7 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { StatsBar } from "@/components/StatsBar";
 import { UpgradeRow } from "@/components/UpgradeRow";
-import { MAX_ADD, MAX_EXP, MAX_MULT, MAX_TOTAL_CIRCLES } from "@/constants/game";
+import { CORRUPT_CHANCE, MAX_ADD, MAX_EXP, MAX_MULT, MAX_TOTAL_CIRCLES } from "@/constants/game";
 import { useGame } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -66,7 +66,7 @@ export default function UpgradesScreen() {
             </Text>
           </View>
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            New circles expire in 45 s. They may spawn corrupted (15% chance) — tap them in Upgrade mode to cleanse. Use the Layout tab to remove unwanted ones.
+            New circles expire in 45 s. They may spawn corrupted ({Math.round(CORRUPT_CHANCE * 100)}% chance) — tap them in Upgrade mode to cleanse. Use the Layout tab to remove unwanted ones.
           </Text>
           <UpgradeRow
             iconName="plus"

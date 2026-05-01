@@ -152,19 +152,34 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
   const initializedIds = useRef<Set<string>>(new Set());
+  const prevCircleCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (!boardSize) return;
     const { w, h } = boardSize;
-    for (const c of state.circles) {
-      const unplaced = c.x === undefined || c.y === undefined;
-      const outOfBounds =
-        !unplaced &&
-        (c.x! < MARGIN || c.x! > w - MARGIN || c.y! < MARGIN || c.y! > h - MARGIN);
-      if (!unplaced && !outOfBounds) continue;
-      initializedIds.current.add(c.id);
-      const pos = randomSpot(w, h);
-      moveCircle(c.id, pos.x, pos.y);
+    const prev = prevCircleCountRef.current;
+    const curr = state.circles.length;
+    prevCircleCountRef.current = curr;
+
+    if (curr > prev && prev > 0) {
+      // New circle bought — scatter every circle to a new random spot
+      for (const c of state.circles) {
+        initializedIds.current.add(c.id);
+        const pos = randomSpot(w, h);
+        moveCircle(c.id, pos.x, pos.y);
+      }
+    } else {
+      // Normal init: place only unpositioned or out-of-bounds circles
+      for (const c of state.circles) {
+        const unplaced = c.x === undefined || c.y === undefined;
+        const outOfBounds =
+          !unplaced &&
+          (c.x! < MARGIN || c.x! > w - MARGIN || c.y! < MARGIN || c.y! > h - MARGIN);
+        if (!unplaced && !outOfBounds) continue;
+        initializedIds.current.add(c.id);
+        const pos = randomSpot(w, h);
+        moveCircle(c.id, pos.x, pos.y);
+      }
     }
   }, [state.circles, boardSize, moveCircle]);
 
@@ -215,6 +230,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
   // Combo bump
   const comboBumpAnim = useRef(new Animated.Value(0)).current;
+
+  // Formula fade animation (smooth appear/disappear)
+  const formulaAnim = useRef(new Animated.Value(0)).current;
 
   // Chain reaction banner
   const chainReactAnim = useRef(new Animated.Value(0)).current;
@@ -408,6 +426,15 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     },
     [scale, scaleRef],
   );
+
+  const scatterAllCircles = useCallback(() => {
+    if (!boardSize) return;
+    const { w, h } = boardSize;
+    for (const c of circlesRef.current) {
+      const pos = randomSpot(w, h);
+      moveCircle(c.id, pos.x, pos.y);
+    }
+  }, [boardSize, moveCircle]);
 
   const panResponder = useMemo(
     () =>
@@ -668,6 +695,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 comboBumpAnim.setValue(0);
                 Animated.spring(comboBumpAnim, { toValue: 1, friction: 4, useNativeDriver: true }).start();
               }
+
+              // Scatter all circles to random new positions after release
+              setTimeout(() => scatterAllCircles(), cur.length * 40 + 80);
             }
           }
           setPointer(null);
@@ -706,6 +736,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
       spawnParticles,
       comboBumpAnim,
       scaleRef,
+      scatterAllCircles,
     ],
   );
 
@@ -716,6 +747,23 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     tapStartRef.current = null;
     soloTapStartRef.current = null;
   }, [mode]);
+
+  // Animate formula text smoothly in/out
+  useEffect(() => {
+    if (chain.length >= 2) {
+      Animated.timing(formulaAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    } else {
+      Animated.timing(formulaAnim, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    }
+  }, [chain.length >= 2, formulaAnim]);
 
   const liveRate = chain.length >= 2 ? computeRelease(chain) : 0;
   const stepwise = chain.length >= 2 ? computeReleaseStepwise(chain) : [];
@@ -1114,16 +1162,30 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           </Animated.View>
 
           {/* ── Live release preview ──────────────────────────────────────────── */}
-          {mode === "play" && liveRate > 0 ? (
-            <View pointerEvents="none" style={styles.liveBadge}>
-              <View style={[styles.liveBadgeInner, { backgroundColor: colors.foreground }]}>
-                <Text style={[styles.formulaText, { color: colors.background }]}>
-                  {formulaPreview} = {formatNum(liveRate)}
-                  {chain.some((c) => c.type === "exp") ? " 💥" : ""}
-                  {chain.some((c) => c.corrupted) ? " ⚠" : ""}
-                </Text>
-              </View>
-            </View>
+          {mode === "play" ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[
+                styles.liveBadge,
+                {
+                  opacity: formulaAnim,
+                  transform: [
+                    {
+                      translateY: formulaAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [6, 0],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
+              <Text style={[styles.formulaText, { color: colors.foreground }]}>
+                {formulaPreview} = {formatNum(liveRate)}
+                {chain.some((c) => c.type === "exp") ? " 💥" : ""}
+                {chain.some((c) => c.corrupted) ? " ⚠" : ""}
+              </Text>
+            </Animated.View>
           ) : null}
 
           {/* ── Earned float text ─────────────────────────────────────────────── */}
@@ -1220,14 +1282,20 @@ const styles = StyleSheet.create({
   costBadgeText: { fontFamily: "Inter_700Bold", fontSize: 11, letterSpacing: 0.3 },
   liveBadge: {
     position: "absolute",
-    bottom: 70,
+    bottom: 74,
     left: 0,
     right: 0,
     alignItems: "center",
     paddingHorizontal: 16,
   },
-  liveBadgeInner: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, maxWidth: "100%" },
-  formulaText: { fontFamily: "Inter_700Bold", fontSize: 13 },
+  formulaText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 15,
+    letterSpacing: 0.3,
+    textShadowColor: "rgba(0,0,0,0.18)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
+  },
   earnText: {
     position: "absolute",
     fontFamily: "Inter_700Bold",
