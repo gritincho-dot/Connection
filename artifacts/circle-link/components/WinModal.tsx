@@ -10,17 +10,17 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useGame } from "@/context/GameContext";
 import { useSave } from "@/context/SaveContext";
+import { useGame } from "@/context/GameContext";
 import { formatNum } from "@/lib/format";
 
 const PRIMARY = "#0f766e";
 const FG = "#1a1714";
 const MUTED = "#7a7159";
 
-export function WinModal({ visible }: { visible: boolean }) {
+export function WinModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const insets = useSafeAreaInsets();
-  const { state, acknowledgeWin } = useGame();
+  const { state } = useGame();
   const { activeSlot, recordWin, exitToMenu } = useSave();
   const router = useRouter();
   const winRecorded = useRef(false);
@@ -53,7 +53,7 @@ export function WinModal({ visible }: { visible: boolean }) {
   }, [visible, activeSlot, recordWin, state.totalLifetime, state.rebirthCount]);
 
   const handleReturnToMenu = () => {
-    acknowledgeWin();
+    onClose();
     exitToMenu();
     router.replace("/");
   };

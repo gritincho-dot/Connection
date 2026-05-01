@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, StyleSheet, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,6 +23,17 @@ export default function GameScreen() {
   const scale = useRef(new Animated.Value(1)).current;
   const scaleRef = useRef(1);
 
+  // Track win as a false→true transition this session only.
+  // Saves start with hasWon=true if already won; we must NOT show the modal on load.
+  const prevHasWon = useRef(state.hasWon);
+  const [freshWin, setFreshWin] = useState(false);
+  useEffect(() => {
+    if (state.hasWon && !prevHasWon.current) {
+      setFreshWin(true);
+    }
+    prevHasWon.current = state.hasWon;
+  }, [state.hasWon]);
+
   const resetView = useCallback(() => {
     scaleRef.current = 1;
     Animated.spring(scale, {
@@ -46,7 +57,7 @@ export default function GameScreen() {
       >
         <GameBoard mode={mode} scale={scale} scaleRef={scaleRef} />
       </View>
-      <WinModal visible={state.hasWon} />
+      <WinModal visible={freshWin} onClose={() => setFreshWin(false)} />
       <AchievementToast />
       <SettingsSheet
         visible={settingsOpen}
