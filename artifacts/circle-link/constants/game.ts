@@ -63,10 +63,16 @@ export const CRIT_MULTIPLIER = 2;
 export const STREAK_THRESHOLD = 4;
 export const STREAK_BONUS_PER_EXTRA = 0.12;
 
-// ─── New challenge mechanics ─────────────────────────────────────────────────
+// ─── Challenge mechanics ─────────────────────────────────────────────────────
 
-// How long a non-permanent circle lasts before it expires (ms)
+// Add circles: hard expiry (ms) — they're cheap so they pop quickly
 export const CIRCLE_TTL_MS = 45_000;
+
+// Mult circles: gradual value decay over this duration (ms), ending at ×2 minimum
+export const MULT_DECAY_MS = 120_000;
+
+// Exp circles: gradual value decay over this duration (ms), ending at ^1 minimum
+export const EXP_DECAY_MS = 90_000;
 
 // Probability that a newly spawned circle is corrupted
 export const CORRUPT_CHANCE = 0.15;
@@ -74,8 +80,13 @@ export const CORRUPT_CHANCE = 0.15;
 // Corrupted circles that appear in a chain reduce the release by this factor
 export const CORRUPT_PENALTY = 0.30;
 
-// How long a mult circle is exhausted after being used in a release (ms)
+// After a mult circle fires, it is "warming up" for this many ms.
+// During warmup it can still join chains but applies a partial multiplier (50 → 100%).
 export const MULT_EXHAUST_MS = 7_000;
+
+// Mult circles idle for this long (since last use or purchase) become "primed" → bonus
+export const PRIME_IDLE_MS = 12_000;
+export const PRIME_BONUS = 0.25; // +25% effective multiplier when primed
 
 // When an exp circle fires in a release, add circles in that chain are
 // destroyed — but the release earns this bonus multiplier as compensation
@@ -86,20 +97,25 @@ export const CLEANSE_COST_ADD = 200;
 export const CLEANSE_COST_MULT = 1_800;
 export const CLEANSE_COST_EXP = 35_000;
 
-// Fraction of a circle's value awarded when it expires naturally
+// Fraction of a circle's value awarded when it expires/decays away naturally
 export const EXPIRE_VALUE_FRACTION = 0.5;
 
 // Passive income: awarded per second = sum(circle.value) * this rate
 export const PASSIVE_INCOME_RATE = 0.2;
 
-// Minimum ms between solo taps (single-circle tap when board has only one
-// interactable circle) — prevents spam
+// Minimum ms between solo taps (single-circle tap when board has only one circle)
 export const SOLO_TAP_COOLDOWN_MS = 3_000;
 
 // Chain reaction: unlocked when rebirthCount >= 1
 export const CHAIN_REACTION_CHANCE = 0.28;
 // Extra fraction of the release added as chain-reaction bonus
 export const CHAIN_REACTION_BONUS = 0.5;
+
+// Chain length milestone bonuses (cumulative)
+export const SURGE_THRESHOLD = 5;    // chain ≥ 5 circles → Surge
+export const SURGE_BONUS = 0.25;     // +25%
+export const MEGA_THRESHOLD = 7;     // chain ≥ 7 circles → Mega Surge
+export const MEGA_BONUS = 0.40;      // additional +40%
 
 export type Achievement = {
   id: string;
@@ -122,4 +138,7 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "energy5", label: "Charged", description: "Reach Connection Energy 5" },
   { id: "chainreact", label: "Aftershock", description: "Trigger a chain reaction" },
   { id: "expburst", label: "Supernova", description: "Trigger an exp AOE wipe" },
+  { id: "surge", label: "Surge", description: "Build a 5-circle chain" },
+  { id: "megasurge", label: "Mega Surge", description: "Build a 7-circle chain" },
+  { id: "primed", label: "Patience Pays", description: "Trigger a primed multiplier" },
 ];

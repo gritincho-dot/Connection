@@ -23,12 +23,18 @@ import Svg, {
 import {
   CIRCLE_TTL_MS,
   EXP_VALUE_DIVISOR,
+  MEGA_THRESHOLD,
+  MULT_DECAY_MS,
   MULT_EXHAUST_MS,
   SOLO_TAP_COOLDOWN_MS,
+  SURGE_THRESHOLD,
 } from "@/constants/game";
 import {
   type CircleNode,
   type CircleType,
+  effectiveValue,
+  exhaustionFactor,
+  isPrimed,
   useGame,
 } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
@@ -65,16 +71,16 @@ const corruptedColorForType = (type: CircleType): string => {
   return "#b45309";
 };
 
-const labelFor = (c: CircleNode): string => {
-  if (c.type === "add") return `${c.corrupted ? "⚠" : "+"}${c.value}`;
-  if (c.type === "mult") return `${c.corrupted ? "⚠" : "×"}${c.value}`;
-  return `^${c.value}`;
+const labelFor = (c: CircleNode, ev: number): string => {
+  if (c.type === "add") return `${c.corrupted ? "⚠" : "+"}${ev}`;
+  if (c.type === "mult") return `${c.corrupted ? "⚠" : "×"}${ev}`;
+  return `^${ev}`;
 };
 
-const opLabel = (c: CircleNode): string => {
-  if (c.type === "add") return `+${c.value}`;
-  if (c.type === "mult") return `×${c.value}`;
-  return `^${(1 + c.value / EXP_VALUE_DIVISOR).toFixed(2)}`;
+const opLabel = (c: CircleNode, ev: number): string => {
+  if (c.type === "add") return `+${ev}`;
+  if (c.type === "mult") return `×${ev}`;
+  return `^${(1 + ev / EXP_VALUE_DIVISOR).toFixed(2)}`;
 };
 
 const triggerHaptic = (
@@ -114,6 +120,7 @@ type Particle = {
   dx: number;
   dy: number;
   color: string;
+  r: number;
   anim: Animated.Value;
 };
 
@@ -222,6 +229,44 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     ]).start();
   }, [chainReactAnim]);
 
+  // Surge banner
+  const surgeAnim = useRef(new Animated.Value(0)).current;
+  const [surgeBonus, setSurgeBonus] = useState(0);
+  const [isMega, setIsMega] = useState(false);
+  const triggerSurge = useCallback((bonus: number, mega: boolean) => {
+    setSurgeBonus(bonus);
+    setIsMega(mega);
+    surgeAnim.setValue(0);
+    Animated.sequence([
+      Animated.spring(surgeAnim, { toValue: 1, friction: 5, useNativeDriver: true }),
+      Animated.delay(1400),
+      Animated.timing(surgeAnim, { toValue: 0, duration: 350, useNativeDriver: true }),
+    ]).start();
+  }, [surgeAnim]);
+
+  // Primed flash
+  const primedFlash = useRef(new Animated.Value(0)).current;
+  const triggerPrimedFlash = useCallback(() => {
+    primedFlash.setValue(0);
+    Animated.sequence([
+      Animated.timing(primedFlash, { toValue: 1, duration: 100, useNativeDriver: true }),
+      Animated.timing(primedFlash, { toValue: 0, duration: 500, useNativeDriver: true }),
+    ]).start();
+  }, [primedFlash]);
+
+  // Primed pulse loop for primed mult circles (shared)
+  const primePulse = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(primePulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(primePulse, { toValue: 0, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [primePulse]);
+
   // Exp AOE flash
   const expFlash = useRef(new Animated.Value(0)).current;
   const triggerExpFlash = useCallback(() => {
@@ -235,11 +280,18 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
   // Particles
   const [particles, setParticles] = useState<Particle[]>([]);
   const spawnParticles = useCallback(
-    (cx: number, cy: number, color: string, count = 14) => {
+    (cx: number, cy: number, color: string, opts?: {
+      count?: number; minSpeed?: number; maxSpeed?: number; r?: number; duration?: number;
+    }) => {
+      const count = opts?.count ?? 14;
+      const minSpeed = opts?.minSpeed ?? 60;
+      const maxSpeed = opts?.maxSpeed ?? 80;
+      const r = opts?.r ?? 4;
+      const duration = opts?.duration ?? 800;
       const newOnes: Particle[] = [];
       for (let i = 0; i < count; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 60 + Math.random() * 80;
+        const speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
         newOnes.push({
           id: particleId++,
           x: cx,
@@ -247,12 +299,13 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           dx: Math.cos(angle) * speed,
           dy: Math.sin(angle) * speed,
           color,
+          r,
           anim: new Animated.Value(0),
         });
       }
       setParticles((prev) => [...prev, ...newOnes]);
       newOnes.forEach((p) => {
-        Animated.timing(p.anim, { toValue: 1, duration: 800, useNativeDriver: true }).start(
+        Animated.timing(p.anim, { toValue: 1, duration, useNativeDriver: true }).start(
           () => { setParticles((prev) => prev.filter((x) => x.id !== p.id)); },
         );
       });
@@ -397,7 +450,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           soloTapStartRef.current = { x, y };
           setPointer({ x, y });
           const hit = findCircleAt(x, y);
-          if (hit && !isExhausted(hit)) {
+          if (hit) {
             setChain([hit]);
             popCircle(hit.id);
             triggerHaptic("light");
@@ -441,12 +494,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           if (!hit) return;
           const current = chainRef.current;
           if (current.length === 0) {
-            if (!isExhausted(hit)) {
-              setChain([hit]);
-              popCircle(hit.id);
-              triggerHaptic("light");
-              sound.play("tick", 1.0);
-            }
+            setChain([hit]);
+            popCircle(hit.id);
+            triggerHaptic("light");
+            sound.play("tick", 1.0);
             return;
           }
           const last = current[current.length - 1];
@@ -458,8 +509,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
             return;
           }
           if (current.some((c) => c.id === hit.id)) return;
-          // Don't add exhausted circles to chain
-          if (isExhausted(hit)) return;
           const next = [...current, hit];
           setChain(next);
           popCircle(hit.id);
@@ -498,7 +547,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 sound.play("chime", 1.1);
                 popCircle(hit.id);
                 if (hit.x !== undefined && hit.y !== undefined)
-                  spawnParticles(hit.x, hit.y, "#22d3ee", 14);
+                  spawnParticles(hit.x, hit.y, "#22d3ee", { count: 14 });
               } else {
                 triggerHaptic("warn");
                 sound.play("buzz", 1.0);
@@ -510,7 +559,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 sound.play("whoosh", 1.0);
                 popCircle(hit.id);
                 if (hit.x !== undefined && hit.y !== undefined)
-                  spawnParticles(hit.x, hit.y, colorForType(hit.type), 10);
+                  spawnParticles(hit.x, hit.y, colorForType(hit.type), { count: 10 });
               } else {
                 triggerHaptic("warn");
                 sound.play("buzz", 1.0);
@@ -547,8 +596,15 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                   triggerHaptic("heavy");
                   sound.play("pop", 0.85);
                   setTimeout(() => sound.play("chaching", 0.9), 80);
-                  if (hit.x !== undefined && hit.y !== undefined)
-                    spawnParticles(hit.x, hit.y, colorForType(hit.type), 8);
+                  if (hit.x !== undefined && hit.y !== undefined) {
+                    const col = colorForType(hit.type);
+                    if (hit.type === "exp")
+                      spawnParticles(hit.x, hit.y, col, { count: 14, minSpeed: 80, maxSpeed: 150, r: 5 });
+                    else if (hit.type === "mult")
+                      spawnParticles(hit.x, hit.y, col, { count: 10, minSpeed: 50, maxSpeed: 100, r: 4 });
+                    else
+                      spawnParticles(hit.x, hit.y, col, { count: 6, minSpeed: 30, maxSpeed: 70, r: 3 });
+                  }
                 }
               }
             }
@@ -579,15 +635,33 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 setTimeout(() => sound.play("chime", 1.4), 200);
               }
 
-              cur.forEach((c) => {
-                if (c.x !== undefined && c.y !== undefined) {
-                  spawnParticles(
-                    c.x,
-                    c.y,
-                    info.crit ? "#facc15" : info.expAOE && c.type === "add" ? "#f97316" : colorForType(c.type),
-                    info.crit ? 18 : info.expAOE && c.type === "add" ? 22 : 10,
-                  );
-                }
+              // Surge / Mega banner
+              if (info.surge) {
+                triggerSurge(info.surgeBonus ?? 0, info.mega ?? false);
+                if (info.mega)
+                  setTimeout(() => sound.play("chime", 1.6), 80);
+              }
+
+              // Primed flash
+              if (info.primed) triggerPrimedFlash();
+
+              // Type-specific particles — cascade with slight delay per circle
+              cur.forEach((c, idx) => {
+                if (c.x === undefined || c.y === undefined) return;
+                setTimeout(() => {
+                  const baseColor = info.crit
+                    ? "#facc15"
+                    : info.expAOE && c.type === "add"
+                      ? "#f97316"
+                      : colorForType(c.type);
+                  if (c.type === "exp") {
+                    spawnParticles(c.x!, c.y!, baseColor, { count: 30, minSpeed: 100, maxSpeed: 200, r: 6, duration: 900 });
+                  } else if (c.type === "mult") {
+                    spawnParticles(c.x!, c.y!, baseColor, { count: 18, minSpeed: 60, maxSpeed: 130, r: 5, duration: 750 });
+                  } else {
+                    spawnParticles(c.x!, c.y!, baseColor, { count: info.crit ? 16 : 8, minSpeed: 40, maxSpeed: 80, r: 3, duration: 600 });
+                  }
+                }, idx * 40);
               });
 
               if (info.comboCount > 1) {
@@ -624,6 +698,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
       flashEarning,
       triggerExpFlash,
       triggerChainReact,
+      triggerSurge,
+      triggerPrimedFlash,
       sound,
       handlePinch,
       popCircle,
@@ -646,10 +722,12 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
   const formulaPreview = useMemo(() => {
     if (chain.length < 2) return "";
-    const parts: string[] = [String(chain[0].value)];
+    const now2 = Date.now();
+    const parts: string[] = [String(effectiveValue(chain[0], now2))];
     for (let i = 1; i < chain.length; i++) {
       const c = chain[i];
-      parts.push(c.corrupted ? `⚠${opLabel(c)}` : opLabel(c));
+      const ev = effectiveValue(c, now2);
+      parts.push(c.corrupted ? `⚠${opLabel(c, ev)}` : opLabel(c, ev));
     }
     return parts.join(" ");
   }, [chain]);
@@ -727,18 +805,22 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 if (!pos) return null;
                 const inChain = chain.some((cc) => cc.id === c.id);
                 const exhausted = isExhausted(c);
+                const primed = c.type === "mult" && isPrimed(c, now);
                 const stroke = c.corrupted ? corruptedColorForType(c.type) : colorForType(c.type);
                 const isDragging = drag?.id === c.id;
                 const masteryStroke = Math.min(3, c.reRollCount * 0.15);
 
-                // Expiry arc
+                // Expiry / decay arc — arc duration is type-dependent
                 let expiryArc: React.ReactNode = null;
                 if (c.expiresAt !== null) {
                   const remaining = Math.max(0, c.expiresAt - now);
-                  const pct = remaining / CIRCLE_TTL_MS;
+                  const totalMs = c.type === "mult" ? MULT_DECAY_MS : c.type === "exp" ? 90000 : CIRCLE_TTL_MS;
+                  const pct = remaining / totalMs;
                   const circumference = 2 * Math.PI * CIRCLE_RADIUS;
                   const arcColor =
-                    pct < 0.2 ? "#ef4444" : pct < 0.45 ? "#f97316" : "#facc15";
+                    c.type !== "add"
+                      ? stroke   // decay arc in circle's own colour
+                      : pct < 0.2 ? "#ef4444" : pct < 0.45 ? "#f97316" : "#facc15";
                   expiryArc = (
                     <SvgCircle
                       key={`exp-${c.id}`}
@@ -747,11 +829,11 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                       r={CIRCLE_RADIUS + 6}
                       fill="none"
                       stroke={arcColor}
-                      strokeWidth={3}
+                      strokeWidth={c.type !== "add" ? 2 : 3}
                       strokeDasharray={`${circumference * pct} ${circumference * (1 - pct)}`}
                       strokeLinecap="round"
                       transform={`rotate(-90, ${pos.x}, ${pos.y})`}
-                      opacity={pct < 0.35 ? 1 : 0.6}
+                      opacity={c.type !== "add" ? 0.45 : pct < 0.35 ? 1 : 0.6}
                     />
                   );
                 }
@@ -759,6 +841,14 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 return (
                   <React.Fragment key={c.id}>
                     {expiryArc}
+
+                    {/* Primed glow ring for mult circles */}
+                    {primed ? (
+                      <SvgCircle
+                        cx={pos.x} cy={pos.y} r={CIRCLE_RADIUS + 13}
+                        fill="none" stroke="#fbbf24" strokeWidth={3} opacity={0.6}
+                      />
+                    ) : null}
 
                     {/* In-chain halo */}
                     {(inChain || isDragging) ? (
@@ -772,18 +862,18 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                     <SvgCircle
                       cx={pos.x} cy={pos.y} r={CIRCLE_RADIUS}
                       fill={
-                        exhausted
-                          ? colors.muted
-                          : inChain
-                            ? stroke
-                            : c.corrupted
-                              ? `${stroke}33`
-                              : colors.circleFill
+                        inChain
+                          ? stroke
+                          : c.corrupted
+                            ? `${stroke}33`
+                            : colors.circleFill
                       }
-                      stroke={exhausted ? colors.border : stroke}
+                      stroke={exhausted ? `${stroke}88` : stroke}
                       strokeWidth={(inChain ? 4 : 3) + masteryStroke}
-                      strokeDasharray={c.corrupted && !inChain ? "5,3" : undefined}
-                      opacity={exhausted ? 0.55 : 1}
+                      strokeDasharray={
+                        exhausted ? "4,3" : c.corrupted && !inChain ? "5,3" : undefined
+                      }
+                      opacity={exhausted ? 0.65 : 1}
                     />
 
                     {/* Particles (rendered elsewhere) */}
@@ -835,7 +925,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                         { color: exhausted ? colors.mutedForeground : inChain ? "#ffffff" : stroke },
                       ]}
                     >
-                      {exhausted ? "💤" : labelFor(c)}
+                      {exhausted ? `💤${effectiveValue(c, now)}` : labelFor(c, effectiveValue(c, now))}
                     </Text>
                   </Animated.View>
 
@@ -1003,6 +1093,26 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
             ) : null}
           </Animated.View>
 
+          {/* ── Surge / Mega banner ───────────────────────────────────────────── */}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              styles.surgeBanner,
+              {
+                opacity: surgeAnim.interpolate({ inputRange: [0, 0.2, 0.8, 1], outputRange: [0, 1, 1, 0] }),
+                transform: [
+                  { scale: surgeAnim.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.6, 1.08, 1] }) },
+                ],
+                backgroundColor: isMega ? "#7c3aed" : "#ea580c",
+              },
+            ]}
+          >
+            <Text style={styles.surgeText}>{isMega ? "🌀 MEGA SURGE!" : "🔥 SURGE!"}</Text>
+            {surgeBonus > 0 ? (
+              <Text style={styles.surgeSub}>+{formatNum(surgeBonus)} bonus</Text>
+            ) : null}
+          </Animated.View>
+
           {/* ── Live release preview ──────────────────────────────────────────── */}
           {mode === "play" && liveRate > 0 ? (
             <View pointerEvents="none" style={styles.liveBadge}>
@@ -1024,9 +1134,13 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 styles.earnText,
                 {
                   color: earnState.crit ? "#facc15" : "#16a34a",
+                  fontSize: earnState.amount > 50000 ? 46
+                    : earnState.amount > 5000 ? 38
+                    : earnState.amount > 500 ? 30
+                    : 24,
                   opacity: earnAnim.interpolate({ inputRange: [0, 0.15, 0.85, 1], outputRange: [0, 1, 1, 0] }),
                   transform: [
-                    { translateY: earnAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -60] }) },
+                    { translateY: earnAnim.interpolate({ inputRange: [0, 1], outputRange: [0, earnState.amount > 5000 ? -90 : -60] }) },
                     { scale: earnAnim.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.6, 1.1, 1] }) },
                   ],
                   top: h / 2 - 20,
@@ -1059,7 +1173,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 }
 
 function ParticleDot({ p }: { p: Particle }) {
-  return <SvgCircle cx={p.x} cy={p.y} r={4} fill={p.color} />;
+  return <SvgCircle cx={p.x} cy={p.y} r={p.r} fill={p.color} />;
 }
 
 const styles = StyleSheet.create({
@@ -1144,6 +1258,32 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 15,
     color: "#fef08a",
+    textAlign: "center",
+  },
+  surgeBanner: {
+    position: "absolute",
+    top: "22%",
+    left: 24,
+    right: 24,
+    alignItems: "center",
+    gap: 4,
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  surgeText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 24,
+    color: "#ffffff",
+    textShadowColor: "rgba(0,0,0,0.3)",
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+    textAlign: "center",
+  },
+  surgeSub: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 14,
+    color: "#fef3c7",
     textAlign: "center",
   },
   modeHintWrap: { position: "absolute", bottom: 12, left: 0, right: 0, alignItems: "center" },
