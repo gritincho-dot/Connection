@@ -433,6 +433,7 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     (chain: CircleNode[]): number => {
       if (chain.length < 2) return 0;
       const s = stateRef.current;
+      const bonuses = computeRebirthBonuses(s.rebirthCount);
       const steps = computeReleaseStepwise(chain);
       let result = steps[steps.length - 1];
 
@@ -446,16 +447,24 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
         result *= 1 + STREAK_BONUS_PER_EXTRA * extra;
       }
 
-      // Chain length milestones
-      if (chain.length >= SURGE_THRESHOLD) result *= 1 + SURGE_BONUS;
-      if (chain.length >= MEGA_THRESHOLD) result *= 1 + MEGA_BONUS;
+      // Chain length milestones — use effective thresholds from rebirth bonuses
+      const effectiveSurge = Math.max(2, SURGE_THRESHOLD - bonuses.surgeThresholdDelta);
+      const effectiveMega = Math.max(3, MEGA_THRESHOLD - bonuses.megaThresholdDelta);
+      if (chain.length >= effectiveSurge) result *= 1 + SURGE_BONUS;
+      if (chain.length >= effectiveMega) result *= 1 + MEGA_BONUS;
 
       result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
       result *= 1 + s.permPower * PERM_POWER_BONUS;
 
-      const within = Date.now() - s.lastReleaseAt < COMBO_WINDOW_MS;
+      // Rebirth release bonus
+      result *= 1 + bonuses.releasePct / 100;
+
+      // Combo — use effective window and max stacks from rebirth bonuses
+      const effectiveComboWindowMs = COMBO_WINDOW_MS + bonuses.extraComboWindowMs;
+      const effectiveComboMaxStacks = COMBO_MAX_STACKS + bonuses.extraComboStacks;
+      const within = Date.now() - s.lastReleaseAt < effectiveComboWindowMs;
       const projectedCombo = within
-        ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS)
+        ? Math.min(s.comboCount + 1, effectiveComboMaxStacks)
         : 1;
       result *= 1 + (projectedCombo - 1) * COMBO_BONUS_PER_STACK;
 
