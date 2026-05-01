@@ -21,6 +21,7 @@ import {
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
   EXP_COST,
+  EXP_VALUE_DIVISOR,
   MAX_ADD,
   MAX_EXP,
   MAX_MULT,
@@ -94,7 +95,7 @@ function newId(prefix: string): string {
 
 function makeStartingCircles(): CircleNode[] {
   return [
-    { id: newId("add"), type: "add", value: 8, reRollCount: 0 },
+    { id: newId("add"), type: "add", value: 5, reRollCount: 0 },
     { id: newId("mult"), type: "mult", value: 2, reRollCount: 0 },
   ];
 }
@@ -164,7 +165,15 @@ type Ctx = {
 
 export const GameContext = createContext<Ctx | null>(null);
 
-const randVal = (): number => Math.floor(Math.random() * 10) + 1;
+// Type-aware value ranges keep each circle type strategically meaningful.
+// Add: 2–12  (additive, higher absolute values are fine)
+// Mult: 2–5  (×2 to ×5 — powerful but not economy-wrecking)
+// Exp: 1–5   (exponent 1.05 to 1.25 — gradual amplification only)
+const randVal = (type: CircleType): number => {
+  if (type === "mult") return Math.floor(Math.random() * 4) + 2;
+  if (type === "exp") return Math.floor(Math.random() * 5) + 1;
+  return Math.floor(Math.random() * 11) + 2;
+};
 
 function checkAchievements(s: GameState): string[] {
   const unlocked: string[] = [];
@@ -275,8 +284,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       } else if (c.type === "mult") {
         result = result * c.value * (1 + s.permMult * PERM_MULT_BONUS);
       } else {
-        // exp: tame growth
-        result = Math.pow(result, 1 + c.value / 10);
+        // exp: controlled growth — EXP_VALUE_DIVISOR keeps max power ≈ 1.25
+        result = Math.pow(result, 1 + c.value / EXP_VALUE_DIVISOR);
       }
       steps.push(result);
     }
@@ -435,7 +444,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           {
             id: newId(type),
             type,
-            value: randVal(),
+            value: randVal(type),
             reRollCount: 0,
           },
         ],
@@ -463,7 +472,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         points: s.points - cost,
         circles: s.circles.map((c) =>
           c.id === id
-            ? { ...c, value: randVal(), reRollCount: c.reRollCount + 1 }
+            ? { ...c, value: randVal(c.type), reRollCount: c.reRollCount + 1 }
             : c,
         ),
       };

@@ -25,6 +25,7 @@ import {
   type CircleType,
   useGame,
 } from "@/context/GameContext";
+import { EXP_VALUE_DIVISOR } from "@/constants/game";
 import { useColors } from "@/hooks/useColors";
 import { formatNum } from "@/lib/format";
 import { useSound } from "@/lib/sound";
@@ -60,7 +61,7 @@ const labelFor = (c: CircleNode): string => {
 const opLabel = (c: CircleNode): string => {
   if (c.type === "add") return `+${c.value}`;
   if (c.type === "mult") return `×${c.value}`;
-  return `^${(1 + c.value / 10).toFixed(1)}`;
+  return `^${(1 + c.value / EXP_VALUE_DIVISOR).toFixed(2)}`;
 };
 
 const triggerHaptic = (

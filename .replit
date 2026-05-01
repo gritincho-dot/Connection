@@ -11,6 +11,27 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "Circle Link"
+
+[[workflows.workflow]]
+name = "Circle Link"
+author = "agent"
+
+[workflows.workflow.metadata]
+outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=20213 pnpm --filter @workspace/circle-link run dev"
+waitForPort = 20213
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true

@@ -34,25 +34,33 @@ export const REBIRTH_THRESHOLD = (rb: number): number =>
 export const REBIRTH_GAIN = (totalEarned: number): number =>
   Math.floor(Math.sqrt(totalEarned / 1000));
 
-export const ENERGY_BONUS_PER_LVL = 0.2;
-export const PERM_POWER_BONUS = 0.5;
-export const PERM_MULT_BONUS = 0.5;
+// Per-level bonuses — tuned down to prevent runaway stacking
+export const ENERGY_BONUS_PER_LVL = 0.12;
+export const PERM_POWER_BONUS = 0.2;
+export const PERM_MULT_BONUS = 0.2;
 export const DISCOUNT_PER_LVL = 0.1;
 
+// Circle caps — one fewer mult circle to reduce extreme multiplication chains
 export const MAX_ADD = 6;
-export const MAX_MULT = 4;
+export const MAX_MULT = 3;
 export const MAX_EXP = 2;
 
-// New mechanics
-export const COMBO_WINDOW_MS = 5000;
-export const COMBO_BONUS_PER_STACK = 0.1;
-export const COMBO_MAX_STACKS = 10;
+// Exp circle: divisor controls how steep the exponent gets.
+// value/20 means a max-roll (5) gives power 1.25 instead of the old 2.0 at value 10.
+export const EXP_VALUE_DIVISOR = 20;
 
-export const CRIT_CHANCE = 0.08;
-export const CRIT_MULTIPLIER = 3;
+// Combo: shorter window, fewer stacks, smaller bonus per stack
+export const COMBO_WINDOW_MS = 3000;
+export const COMBO_BONUS_PER_STACK = 0.05;
+export const COMBO_MAX_STACKS = 6;
 
+// Crit: slightly rarer, less explosive
+export const CRIT_CHANCE = 0.05;
+export const CRIT_MULTIPLIER = 2;
+
+// Streak: bonus kicks in at 4 circles but grows more slowly
 export const STREAK_THRESHOLD = 4;
-export const STREAK_BONUS_PER_EXTRA = 0.25;
+export const STREAK_BONUS_PER_EXTRA = 0.12;
 
 export type Achievement = {
   id: string;
