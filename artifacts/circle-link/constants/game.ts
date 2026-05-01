@@ -34,33 +34,62 @@ export const REBIRTH_THRESHOLD = (rb: number): number =>
 export const REBIRTH_GAIN = (totalEarned: number): number =>
   Math.floor(Math.sqrt(totalEarned / 1000));
 
-// Per-level bonuses — tuned down to prevent runaway stacking
+// Per-level bonuses
 export const ENERGY_BONUS_PER_LVL = 0.12;
 export const PERM_POWER_BONUS = 0.2;
 export const PERM_MULT_BONUS = 0.2;
 export const DISCOUNT_PER_LVL = 0.1;
 
-// Circle caps — one fewer mult circle to reduce extreme multiplication chains
+// Circle type limits
 export const MAX_ADD = 6;
 export const MAX_MULT = 3;
 export const MAX_EXP = 2;
+// Hard cap on total circles on the board at once
+export const MAX_TOTAL_CIRCLES = 10;
 
-// Exp circle: divisor controls how steep the exponent gets.
-// value/20 means a max-roll (5) gives power 1.25 instead of the old 2.0 at value 10.
+// Exp circle exponent divisor: value/EXP_VALUE_DIVISOR controls how steep the power is
 export const EXP_VALUE_DIVISOR = 20;
 
-// Combo: shorter window, fewer stacks, smaller bonus per stack
+// Combo system
 export const COMBO_WINDOW_MS = 3000;
 export const COMBO_BONUS_PER_STACK = 0.05;
 export const COMBO_MAX_STACKS = 6;
 
-// Crit: slightly rarer, less explosive
+// Crit
 export const CRIT_CHANCE = 0.05;
 export const CRIT_MULTIPLIER = 2;
 
-// Streak: bonus kicks in at 4 circles but grows more slowly
+// Streak
 export const STREAK_THRESHOLD = 4;
 export const STREAK_BONUS_PER_EXTRA = 0.12;
+
+// ─── New challenge mechanics ─────────────────────────────────────────────────
+
+// How long a non-permanent circle lasts before it expires (ms)
+export const CIRCLE_TTL_MS = 45_000;
+
+// Probability that a newly spawned circle is corrupted
+export const CORRUPT_CHANCE = 0.15;
+
+// Corrupted circles that appear in a chain reduce the release by this factor
+export const CORRUPT_PENALTY = 0.30;
+
+// How long a mult circle is exhausted after being used in a release (ms)
+export const MULT_EXHAUST_MS = 12_000;
+
+// When an exp circle fires in a release, add circles in that chain are
+// destroyed — but the release earns this bonus multiplier as compensation
+export const EXP_AOE_BONUS = 1.8;
+
+// Point cost to cleanse (de-corrupt) a circle
+export const CLEANSE_COST_ADD = 300;
+export const CLEANSE_COST_MULT = 3_000;
+export const CLEANSE_COST_EXP = 60_000;
+
+// Chain reaction: unlocked when rebirthCount >= 1
+export const CHAIN_REACTION_CHANCE = 0.28;
+// Extra fraction of the release added as chain-reaction bonus
+export const CHAIN_REACTION_BONUS = 0.5;
 
 export type Achievement = {
   id: string;
@@ -81,4 +110,6 @@ export const ACHIEVEMENTS: Achievement[] = [
   { id: "crit", label: "Lucky Strike", description: "Land a critical hit" },
   { id: "rebirth1", label: "Reborn", description: "Rebirth for the first time" },
   { id: "energy5", label: "Charged", description: "Reach Connection Energy 5" },
+  { id: "chainreact", label: "Aftershock", description: "Trigger a chain reaction" },
+  { id: "expburst", label: "Supernova", description: "Trigger an exp AOE wipe" },
 ];

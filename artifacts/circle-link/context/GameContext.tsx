@@ -12,19 +12,30 @@ import React, {
 import {
   ACHIEVEMENTS,
   ADD_COST,
+  CHAIN_REACTION_BONUS,
+  CHAIN_REACTION_CHANCE,
+  CIRCLE_TTL_MS,
+  CLEANSE_COST_ADD,
+  CLEANSE_COST_EXP,
+  CLEANSE_COST_MULT,
   COMBO_BONUS_PER_STACK,
   COMBO_MAX_STACKS,
   COMBO_WINDOW_MS,
+  CORRUPT_CHANCE,
+  CORRUPT_PENALTY,
   CRIT_CHANCE,
   CRIT_MULTIPLIER,
   DISCOUNT_PER_LVL,
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
+  EXP_AOE_BONUS,
   EXP_COST,
   EXP_VALUE_DIVISOR,
   MAX_ADD,
   MAX_EXP,
   MAX_MULT,
+  MAX_TOTAL_CIRCLES,
+  MULT_EXHAUST_MS,
   MULT_COST,
   PERM_DISCOUNT_COST,
   PERM_MULT_BONUS,
@@ -50,6 +61,12 @@ export type CircleNode = {
   x?: number;
   y?: number;
   reRollCount: number;
+  // null = permanent (starting circles), timestamp = expires at that time
+  expiresAt: number | null;
+  // whether this circle spawned corrupted
+  corrupted: boolean;
+  // timestamp until which this mult circle is exhausted (can't join chains)
+  exhaustedUntil: number | null;
 };
 
 export type Settings = {
@@ -63,6 +80,10 @@ export type ReleaseInfo = {
   crit: boolean;
   comboCount: number;
   newAchievements: string[];
+  expAOE: boolean;
+  circlesDestroyed: number;
+  chainReaction: boolean;
+  chainReactionBonus: number;
 };
 
 export type GameState = {
@@ -76,14 +97,12 @@ export type GameState = {
   permMult: number;
   permDiscount: number;
   rebirthCount: number;
-  // Tracking
   bestChainLength: number;
   bestSingleEarning: number;
   totalReleases: number;
   comboCount: number;
   lastReleaseAt: number;
   achievements: string[];
-  // Settings
   settings: Settings;
 };
 
@@ -95,8 +114,24 @@ function newId(prefix: string): string {
 
 function makeStartingCircles(): CircleNode[] {
   return [
-    { id: newId("add"), type: "add", value: 5, reRollCount: 0 },
-    { id: newId("mult"), type: "mult", value: 2, reRollCount: 0 },
+    {
+      id: newId("add"),
+      type: "add",
+      value: 5,
+      reRollCount: 0,
+      expiresAt: null,
+      corrupted: false,
+      exhaustedUntil: null,
+    },
+    {
+      id: newId("mult"),
+      type: "mult",
+      value: 2,
+      reRollCount: 0,
+      expiresAt: null,
+      corrupted: false,
+      exhaustedUntil: null,
+    },
   ];
 }
 
@@ -123,7 +158,7 @@ const initial: GameState = {
   },
 };
 
-const STORAGE_KEY = "@circle-link/state-v3";
+const STORAGE_KEY = "@circle-link/state-v4";
 
 export type Costs = {
   energy: number;
@@ -142,12 +177,15 @@ type Ctx = {
   costs: Costs;
   applyDiscount: (cost: number) => number;
   reRollCostFor: (circle: CircleNode) => number;
+  cleanseCostFor: (circle: CircleNode) => number;
   computeRelease: (chain: CircleNode[]) => number;
   computeReleaseStepwise: (chain: CircleNode[]) => number[];
   releaseChain: (chain: CircleNode[]) => ReleaseInfo;
   buyEnergy: () => boolean;
   addCircle: (type: CircleType) => boolean;
   reRollCircle: (id: string) => boolean;
+  cleanseCircle: (id: string) => boolean;
+  removeCircle: (id: string) => void;
   moveCircle: (id: string, x: number, y: number) => void;
   shuffleLayout: () => void;
   buyPermPower: () => boolean;
@@ -160,15 +198,14 @@ type Ctx = {
   acknowledgeAchievement: (id: string) => void;
   pendingAchievement: string | null;
   canRebirth: boolean;
+  boardFull: boolean;
   loaded: boolean;
 };
 
 export const GameContext = createContext<Ctx | null>(null);
 
-// Type-aware value ranges keep each circle type strategically meaningful.
-// Add: 2–12  (additive, higher absolute values are fine)
-// Mult: 2–5  (×2 to ×5 — powerful but not economy-wrecking)
-// Exp: 1–5   (exponent 1.05 to 1.25 — gradual amplification only)
+// Type-aware random value ranges
+// Add: 2–12  |  Mult: 2–5  |  Exp: 1–5
 const randVal = (type: CircleType): number => {
   if (type === "mult") return Math.floor(Math.random() * 4) + 2;
   if (type === "exp") return Math.floor(Math.random() * 5) + 1;
@@ -199,25 +236,28 @@ function checkAchievements(s: GameState): string[] {
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState>(initial);
   const [loaded, setLoaded] = useState(false);
-  const [pendingAchievement, setPendingAchievement] = useState<string | null>(
-    null,
-  );
+  const [pendingAchievement, setPendingAchievement] = useState<string | null>(null);
   const achievementQueue = useRef<string[]>([]);
   const stateRef = useRef(state);
   stateRef.current = state;
 
+  // Load persisted state
   useEffect(() => {
     (async () => {
       try {
         const raw = await AsyncStorage.getItem(STORAGE_KEY);
         if (raw) {
           const parsed = JSON.parse(raw) as Partial<GameState>;
-          if (
-            !parsed.circles ||
-            !Array.isArray(parsed.circles) ||
-            parsed.circles.length === 0
-          ) {
+          if (!parsed.circles || !Array.isArray(parsed.circles) || parsed.circles.length === 0) {
             parsed.circles = makeStartingCircles();
+          } else {
+            // Migrate old circles that lack new fields
+            parsed.circles = parsed.circles.map((c: CircleNode) => ({
+              ...c,
+              expiresAt: c.expiresAt ?? null,
+              corrupted: c.corrupted ?? false,
+              exhaustedUntil: c.exhaustedUntil ?? null,
+            }));
           }
           if (!parsed.settings) parsed.settings = initial.settings;
           if (!parsed.achievements) parsed.achievements = [];
@@ -230,6 +270,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
+  // Persist on change
   useEffect(() => {
     if (!loaded) return;
     const t = setTimeout(() => {
@@ -237,6 +278,28 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }, 300);
     return () => clearTimeout(t);
   }, [state, loaded]);
+
+  // ── Expiry interval ─────────────────────────────────────────────────────────
+  // Every second, remove circles whose expiresAt has passed
+  useEffect(() => {
+    if (!loaded) return;
+    const id = setInterval(() => {
+      const now = Date.now();
+      setState((s) => {
+        const expired = s.circles.filter(
+          (c) => c.expiresAt !== null && now >= c.expiresAt,
+        );
+        if (expired.length === 0) return s;
+        return {
+          ...s,
+          circles: s.circles.filter(
+            (c) => c.expiresAt === null || now < c.expiresAt,
+          ),
+        };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [loaded]);
 
   const enqueueAchievements = useCallback((ids: string[]) => {
     if (ids.length === 0) return;
@@ -253,9 +316,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyDiscount = useCallback((cost: number) => {
-    return Math.ceil(
-      cost * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL),
-    );
+    return Math.ceil(cost * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL));
   }, []);
 
   const reRollCostFor = useCallback((circle: CircleNode): number => {
@@ -265,12 +326,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         : circle.type === "mult"
           ? REROLL_COST_MULT(circle.reRollCount)
           : REROLL_COST_EXP(circle.reRollCount);
-    return Math.ceil(
-      base * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL),
-    );
+    return Math.ceil(base * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL));
   }, []);
 
-  // Order-based stepwise computation
+  const cleanseCostFor = useCallback((circle: CircleNode): number => {
+    const base =
+      circle.type === "add"
+        ? CLEANSE_COST_ADD
+        : circle.type === "mult"
+          ? CLEANSE_COST_MULT
+          : CLEANSE_COST_EXP;
+    return Math.ceil(base * (1 - stateRef.current.permDiscount * DISCOUNT_PER_LVL));
+  }, []);
+
+  // ── Computation ──────────────────────────────────────────────────────────────
+
+  // Returns per-step running totals. Corrupted circles apply a -30% penalty at
+  // the END via a flag, but we keep step values honest for the preview display.
   const computeReleaseStepwise = useCallback((chain: CircleNode[]): number[] => {
     if (chain.length === 0) return [];
     const s = stateRef.current;
@@ -284,7 +356,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       } else if (c.type === "mult") {
         result = result * c.value * (1 + s.permMult * PERM_MULT_BONUS);
       } else {
-        // exp: controlled growth — EXP_VALUE_DIVISOR keeps max power ≈ 1.25
         result = Math.pow(result, 1 + c.value / EXP_VALUE_DIVISOR);
       }
       steps.push(result);
@@ -299,17 +370,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const steps = computeReleaseStepwise(chain);
       let result = steps[steps.length - 1];
 
+      // Corrupted penalty
+      const corruptCount = chain.filter((c) => c.corrupted).length;
+      if (corruptCount > 0) result *= Math.pow(1 - CORRUPT_PENALTY, corruptCount);
+
       // Streak bonus
       if (chain.length >= STREAK_THRESHOLD) {
         const extra = chain.length - STREAK_THRESHOLD + 1;
         result *= 1 + STREAK_BONUS_PER_EXTRA * extra;
       }
 
-      // Energy + permPower
+      // Exp AOE bonus preview
+      const hasExp = chain.some((c) => c.type === "exp");
+      if (hasExp) result *= EXP_AOE_BONUS;
+
       result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
       result *= 1 + s.permPower * PERM_POWER_BONUS;
 
-      // Combo (preview): assume current combo applies if within window
       const within = Date.now() - s.lastReleaseAt < COMBO_WINDOW_MS;
       const projectedCombo = within
         ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS)
@@ -330,36 +407,89 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           crit: false,
           comboCount: 0,
           newAchievements: [],
+          expAOE: false,
+          circlesDestroyed: 0,
+          chainReaction: false,
+          chainReactionBonus: 0,
         };
       }
+
       let info: ReleaseInfo = {
         earned: 0,
         baseEarned: 0,
         crit: false,
         comboCount: 0,
         newAchievements: [],
+        expAOE: false,
+        circlesDestroyed: 0,
+        chainReaction: false,
+        chainReactionBonus: 0,
       };
+
       setState((s) => {
         const steps = computeReleaseStepwise(chain);
         let result = steps[steps.length - 1];
 
+        // Corrupted penalty (stacks per corrupted circle)
+        const corruptedInChain = chain.filter((c) => c.corrupted);
+        if (corruptedInChain.length > 0) {
+          result *= Math.pow(1 - CORRUPT_PENALTY, corruptedInChain.length);
+        }
+
+        // Streak bonus
         if (chain.length >= STREAK_THRESHOLD) {
           const extra = chain.length - STREAK_THRESHOLD + 1;
           result *= 1 + STREAK_BONUS_PER_EXTRA * extra;
         }
+
+        // Exp AOE: does this chain include an exp circle?
+        const expInChain = chain.filter((c) => c.type === "exp");
+        const hasExp = expInChain.length > 0;
+        if (hasExp) result *= EXP_AOE_BONUS;
+
         result *= 1 + s.energyLevel * ENERGY_BONUS_PER_LVL;
         result *= 1 + s.permPower * PERM_POWER_BONUS;
 
         const now = Date.now();
         const within = now - s.lastReleaseAt < COMBO_WINDOW_MS;
-        const newCombo = within
-          ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS)
-          : 1;
+        const newCombo = within ? Math.min(s.comboCount + 1, COMBO_MAX_STACKS) : 1;
         result *= 1 + (newCombo - 1) * COMBO_BONUS_PER_STACK;
 
         const baseEarned = Math.floor(result);
         const crit = Math.random() < CRIT_CHANCE;
-        const earned = crit ? baseEarned * CRIT_MULTIPLIER : baseEarned;
+        let earned = crit ? baseEarned * CRIT_MULTIPLIER : baseEarned;
+
+        // Chain reaction (requires at least one rebirth)
+        const chainReactionTriggered =
+          s.rebirthCount >= 1 && Math.random() < CHAIN_REACTION_CHANCE;
+        const chainReactionBonus = chainReactionTriggered
+          ? Math.floor(earned * CHAIN_REACTION_BONUS)
+          : 0;
+        if (chainReactionTriggered) earned += chainReactionBonus;
+
+        // Identify circles destroyed by exp AOE: add circles in the chain
+        // (excluding starting/permanent circles so they can't all be wiped)
+        const chainAddIds = new Set(
+          chain
+            .filter((c) => c.type === "add" && c.expiresAt !== null)
+            .map((c) => c.id),
+        );
+        const circlesDestroyed = hasExp ? chainAddIds.size : 0;
+
+        // Identify mult circles in chain → exhaust them
+        const multIdsInChain = new Set(
+          chain.filter((c) => c.type === "mult").map((c) => c.id),
+        );
+
+        // Update circles: destroy exp-wiped adds, exhaust mults
+        const updatedCircles = s.circles
+          .filter((c) => !(hasExp && chainAddIds.has(c.id)))
+          .map((c) => {
+            if (multIdsInChain.has(c.id)) {
+              return { ...c, exhaustedUntil: now + MULT_EXHAUST_MS };
+            }
+            return c;
+          });
 
         const next: GameState = {
           ...s,
@@ -371,28 +501,36 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           lastReleaseAt: now,
           bestChainLength: Math.max(s.bestChainLength, chain.length),
           bestSingleEarning: Math.max(s.bestSingleEarning, earned),
+          circles: updatedCircles,
         };
+
+        // Unlock achievements
         const unlocked = checkAchievements({ ...next, achievements: s.achievements });
+        if (crit && !s.achievements.includes("crit")) unlocked.push("crit");
+        if (hasExp && !s.achievements.includes("expburst")) unlocked.push("expburst");
+        if (chainReactionTriggered && !s.achievements.includes("chainreact"))
+          unlocked.push("chainreact");
         next.achievements = [...s.achievements, ...unlocked];
-        if (crit && !next.achievements.includes("crit")) {
-          next.achievements.push("crit");
-          unlocked.push("crit");
-        }
+
         info = {
           earned,
           baseEarned,
           crit,
           comboCount: newCombo,
           newAchievements: unlocked,
+          expAOE: hasExp,
+          circlesDestroyed,
+          chainReaction: chainReactionTriggered,
+          chainReactionBonus,
         };
+
         return next;
       });
-      // After state update, surface achievement
+
       setTimeout(() => {
-        if (info.newAchievements.length > 0) {
-          enqueueAchievements(info.newAchievements);
-        }
+        if (info.newAchievements.length > 0) enqueueAchievements(info.newAchievements);
       }, 0);
+
       return info;
     },
     [computeReleaseStepwise, enqueueAchievements],
@@ -406,11 +544,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       );
       if (s.points < cost) return s;
       ok = true;
-      const next = {
-        ...s,
-        points: s.points - cost,
-        energyLevel: s.energyLevel + 1,
-      };
+      const next = { ...s, points: s.points - cost, energyLevel: s.energyLevel + 1 };
       const unlocked = checkAchievements(next);
       if (unlocked.length > 0) {
         next.achievements = [...next.achievements, ...unlocked];
@@ -424,18 +558,20 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const addCircle = useCallback((type: CircleType) => {
     let ok = false;
     setState((s) => {
+      // Hard cap on total circles
+      if (s.circles.length >= MAX_TOTAL_CIRCLES) return s;
+
       const count = s.circles.filter((c) => c.type === type).length;
       const max = type === "add" ? MAX_ADD : type === "mult" ? MAX_MULT : MAX_EXP;
       if (count >= max) return s;
+
       const rawCost =
-        type === "add"
-          ? ADD_COST(count)
-          : type === "mult"
-            ? MULT_COST(count)
-            : EXP_COST(count);
+        type === "add" ? ADD_COST(count) : type === "mult" ? MULT_COST(count) : EXP_COST(count);
       const cost = Math.ceil(rawCost * (1 - s.permDiscount * DISCOUNT_PER_LVL));
       if (s.points < cost) return s;
+
       ok = true;
+      const corrupted = Math.random() < CORRUPT_CHANCE;
       return {
         ...s,
         points: s.points - cost,
@@ -446,6 +582,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             type,
             value: randVal(type),
             reRollCount: 0,
+            expiresAt: Date.now() + CIRCLE_TTL_MS,
+            corrupted,
+            exhaustedUntil: null,
           },
         ],
       };
@@ -467,12 +606,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const cost = Math.ceil(rawCost * (1 - s.permDiscount * DISCOUNT_PER_LVL));
       if (s.points < cost) return s;
       ok = true;
+      // Re-rolling resets expiry timer and re-rolls corruption status
+      const corrupted = circle.expiresAt !== null ? Math.random() < CORRUPT_CHANCE : false;
       return {
         ...s,
         points: s.points - cost,
         circles: s.circles.map((c) =>
           c.id === id
-            ? { ...c, value: randVal(c.type), reRollCount: c.reRollCount + 1 }
+            ? {
+                ...c,
+                value: randVal(c.type),
+                reRollCount: c.reRollCount + 1,
+                expiresAt: c.expiresAt !== null ? Date.now() + CIRCLE_TTL_MS : null,
+                corrupted,
+                exhaustedUntil: null,
+              }
             : c,
         ),
       };
@@ -480,15 +628,44 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return ok;
   }, []);
 
+  const cleanseCircle = useCallback((id: string) => {
+    let ok = false;
+    setState((s) => {
+      const circle = s.circles.find((c) => c.id === id);
+      if (!circle || !circle.corrupted) return s;
+      const base =
+        circle.type === "add"
+          ? CLEANSE_COST_ADD
+          : circle.type === "mult"
+            ? CLEANSE_COST_MULT
+            : CLEANSE_COST_EXP;
+      const cost = Math.ceil(base * (1 - s.permDiscount * DISCOUNT_PER_LVL));
+      if (s.points < cost) return s;
+      ok = true;
+      return {
+        ...s,
+        points: s.points - cost,
+        circles: s.circles.map((c) =>
+          c.id === id ? { ...c, corrupted: false } : c,
+        ),
+      };
+    });
+    return ok;
+  }, []);
+
+  const removeCircle = useCallback((id: string) => {
+    setState((s) => ({
+      ...s,
+      circles: s.circles.filter((c) => c.id !== id),
+    }));
+  }, []);
+
   const moveCircle = useCallback((id: string, x: number, y: number) => {
     setState((s) => {
       const target = s.circles.find((c) => c.id === id);
       if (!target) return s;
       if (target.x === x && target.y === y) return s;
-      return {
-        ...s,
-        circles: s.circles.map((c) => (c.id === id ? { ...c, x, y } : c)),
-      };
+      return { ...s, circles: s.circles.map((c) => (c.id === id ? { ...c, x, y } : c)) };
     });
   }, []);
 
@@ -506,11 +683,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (raw === null) return s;
       if (s.circlePoints < raw) return s;
       ok = true;
-      return {
-        ...s,
-        circlePoints: s.circlePoints - raw,
-        permPower: s.permPower + 1,
-      };
+      return { ...s, circlePoints: s.circlePoints - raw, permPower: s.permPower + 1 };
     });
     return ok;
   }, []);
@@ -522,11 +695,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (raw === null) return s;
       if (s.circlePoints < raw) return s;
       ok = true;
-      return {
-        ...s,
-        circlePoints: s.circlePoints - raw,
-        permMult: s.permMult + 1,
-      };
+      return { ...s, circlePoints: s.circlePoints - raw, permMult: s.permMult + 1 };
     });
     return ok;
   }, []);
@@ -538,11 +707,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (raw === null) return s;
       if (s.circlePoints < raw) return s;
       ok = true;
-      return {
-        ...s,
-        circlePoints: s.circlePoints - raw,
-        permDiscount: s.permDiscount + 1,
-      };
+      return { ...s, circlePoints: s.circlePoints - raw, permDiscount: s.permDiscount + 1 };
     });
     return ok;
   }, []);
@@ -607,20 +772,24 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   }, [state]);
 
   const canRebirth =
-    state.totalEarnedThisRun >= costs.rebirthThreshold &&
-    costs.rebirthCpGain > 0;
+    state.totalEarnedThisRun >= costs.rebirthThreshold && costs.rebirthCpGain > 0;
+
+  const boardFull = state.circles.length >= MAX_TOTAL_CIRCLES;
 
   const value: Ctx = {
     state,
     costs,
     applyDiscount,
     reRollCostFor,
+    cleanseCostFor,
     computeRelease,
     computeReleaseStepwise,
     releaseChain,
     buyEnergy,
     addCircle,
     reRollCircle,
+    cleanseCircle,
+    removeCircle,
     moveCircle,
     shuffleLayout,
     buyPermPower,
@@ -633,6 +802,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     acknowledgeAchievement,
     pendingAchievement,
     canRebirth,
+    boardFull,
     loaded,
   };
 

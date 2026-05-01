@@ -83,6 +83,15 @@ export default function RebirthScreen() {
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
             Trade your run for permanent power
           </Text>
+          {state.rebirthCount >= 1 ? (
+            <Text style={[styles.subtitle, { color: "#facc15", marginTop: 4 }]}>
+              ⚡ Chain Reactions unlocked — each release has a 28% chance to fire again for +50% bonus
+            </Text>
+          ) : (
+            <Text style={[styles.subtitle, { color: colors.mutedForeground, marginTop: 4 }]}>
+              First rebirth unlocks Chain Reactions — surprise 28% bonus triggers on release
+            </Text>
+          )}
         </View>
 
         <View
@@ -172,7 +181,7 @@ export default function RebirthScreen() {
             iconName="zap"
             iconColor={colors.primary}
             title="Eternal Power"
-            description={`+50% base rate per level. Currently +${state.permPower * 50}%.`}
+            description={`+20% base release rate per level. Currently +${state.permPower * 20}%.`}
             level={`Lv ${state.permPower}`}
             costLabel="cp"
             costValue={costs.permPower}
@@ -187,7 +196,7 @@ export default function RebirthScreen() {
             iconName="x"
             iconColor="#a855f7"
             title="Eternal Multiplier"
-            description={`+50% to multiplier circle bonus per level. Currently +${state.permMult * 50}%.`}
+            description={`+20% to multiplier circle strength per level. Currently +${state.permMult * 20}%.`}
             level={`Lv ${state.permMult}`}
             costLabel="cp"
             costValue={costs.permMult}

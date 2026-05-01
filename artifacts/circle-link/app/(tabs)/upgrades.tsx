@@ -3,13 +3,13 @@ import { ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { StatsBar } from "@/components/StatsBar";
 import { UpgradeRow } from "@/components/UpgradeRow";
-import { MAX_ADD, MAX_EXP, MAX_MULT } from "@/constants/game";
+import { MAX_ADD, MAX_EXP, MAX_MULT, MAX_TOTAL_CIRCLES } from "@/constants/game";
 import { useGame } from "@/context/GameContext";
 import { useColors } from "@/hooks/useColors";
 
 export default function UpgradesScreen() {
   const colors = useColors();
-  const { state, costs, applyDiscount, buyEnergy, addCircle } = useGame();
+  const { state, costs, applyDiscount, buyEnergy, addCircle, boardFull } = useGame();
 
   const energyCost = applyDiscount(costs.energy);
   const addCost = costs.add !== null ? applyDiscount(costs.add) : null;
@@ -59,47 +59,52 @@ export default function UpgradesScreen() {
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>
             Add new circles
           </Text>
+          <View style={[styles.capacityRow, { borderColor: boardFull ? "#ef4444" : colors.border, backgroundColor: boardFull ? "#ef444422" : colors.card }]}>
+            <Text style={[styles.capacityText, { color: boardFull ? "#ef4444" : colors.mutedForeground }]}>
+              Board: {state.circles.length} / {MAX_TOTAL_CIRCLES} circles
+              {boardFull ? "  —  Remove circles before buying more" : ""}
+            </Text>
+          </View>
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            Each new circle gets a random value between 1 and 10. Use the
-            Upgrade button on the play board to re-roll its value.
+            New circles expire in 45 s. They may spawn corrupted (15% chance) — tap them in Upgrade mode to cleanse. Use the Layout tab to remove unwanted ones.
           </Text>
           <UpgradeRow
             iconName="plus"
             iconColor="#16a34a"
             title="Addition Circle"
-            description="Adds its value to the chain's base before multipliers."
+            description="Safe and cheap. Adds its value to the running total. Always survives a chain release."
             level={`${addCount} / ${MAX_ADD}`}
             costLabel="pts"
-            costValue={addCost}
+            costValue={boardFull ? null : addCost}
             currency="points"
-            affordable={addCost !== null && state.points >= addCost}
-            maxed={costs.add === null}
+            affordable={!boardFull && addCost !== null && state.points >= addCost}
+            maxed={costs.add === null || boardFull}
             onBuy={() => addCircle("add")}
           />
           <UpgradeRow
             iconName="x"
             iconColor="#9333ea"
             title="Multiplication Circle"
-            description="Multiplies the chain's running total by its value."
+            description="Multiplies the running total. Becomes exhausted for 12 s after each release — plan your timing."
             level={`${multCount} / ${MAX_MULT}`}
             costLabel="pts"
-            costValue={multCost}
+            costValue={boardFull ? null : multCost}
             currency="points"
-            affordable={multCost !== null && state.points >= multCost}
-            maxed={costs.mult === null}
+            affordable={!boardFull && multCost !== null && state.points >= multCost}
+            maxed={costs.mult === null || boardFull}
             onBuy={() => addCircle("mult")}
           />
           <UpgradeRow
             iconName="trending-up"
             iconColor="#ea580c"
             title="Exponential Circle"
-            description="Raises the chain's running total to a power based on its value."
+            description="Huge burst — but destroys every add circle in the chain with it. Cash out wisely."
             level={`${expCount} / ${MAX_EXP}`}
             costLabel="pts"
-            costValue={expCost}
+            costValue={boardFull ? null : expCost}
             currency="points"
-            affordable={expCost !== null && state.points >= expCost}
-            maxed={costs.exp === null}
+            affordable={!boardFull && expCost !== null && state.points >= expCost}
+            maxed={costs.exp === null || boardFull}
             onBuy={() => addCircle("exp")}
           />
         </View>
@@ -152,6 +157,17 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     fontSize: 12,
     lineHeight: 16,
+    textAlign: "center",
+  },
+  capacityRow: {
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  capacityText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 13,
     textAlign: "center",
   },
 });
