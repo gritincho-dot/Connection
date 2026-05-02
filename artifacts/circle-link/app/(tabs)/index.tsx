@@ -59,6 +59,7 @@ export default function GameScreen() {
       >
         <GameBoard
           mode={mode}
+          onResetView={resetView}
           scale={scale}
           scaleRef={scaleRef}
           panAnim={panAnim}

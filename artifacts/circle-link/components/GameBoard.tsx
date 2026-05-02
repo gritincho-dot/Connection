@@ -74,6 +74,7 @@ export type Mode = "play" | "layout" | "upgrade" | "delete";
 type Props = {
   mode: Mode;
   onShuffle?: () => void;
+  onResetView?: () => void;
   scale: Animated.Value;
   scaleRef: React.MutableRefObject<number>;
   panAnim: Animated.ValueXY;
@@ -173,7 +174,7 @@ type Particle = {
 
 let particleId = 0;
 
-export function GameBoard({ mode, scale, scaleRef, panAnim, panXRef, panYRef }: Props) {
+export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef, panYRef }: Props) {
   const colors = useColors();
   const sound = useSound();
   const {
@@ -804,8 +805,10 @@ export function GameBoard({ mode, scale, scaleRef, panAnim, panXRef, panYRef }: 
                 Animated.spring(comboBumpAnim, { toValue: 1, friction: 4, useNativeDriver: true }).start();
               }
 
-              // Scatter all circles to random new positions after release
-              setTimeout(() => scatterAllCircles(), cur.length * 40 + 80);
+              // Scatter all circles to random new positions after release, then snap view back to centre
+              const scatterDelay = cur.length * 40 + 80;
+              setTimeout(() => scatterAllCircles(), scatterDelay);
+              setTimeout(() => onResetView?.(), scatterDelay + 50);
             }
           }
           setPointer(null);
