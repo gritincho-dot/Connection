@@ -21,6 +21,8 @@ import Svg, {
 } from "react-native-svg";
 
 import {
+  COMBO_BONUS_PER_STACK,
+  COMBO_WINDOW_MS,
   EXP_VALUE_DIVISOR,
   MEGA_THRESHOLD,
   MULT_DECAY_MS,
@@ -343,8 +345,9 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
   // Crit flash
   const critFlash = useRef(new Animated.Value(0)).current;
 
-  // Combo bump
+  // Combo bump + scale pop
   const comboBumpAnim = useRef(new Animated.Value(0)).current;
+  const comboScaleAnim = useRef(new Animated.Value(1)).current;
 
   // Formula fade animation (smooth appear/disappear)
   const formulaAnim = useRef(new Animated.Value(0)).current;
@@ -847,6 +850,8 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
               if (info.comboCount > 1) {
                 comboBumpAnim.setValue(0);
                 Animated.spring(comboBumpAnim, { toValue: 1, friction: 4, useNativeDriver: true }).start();
+                comboScaleAnim.setValue(1.22);
+                Animated.spring(comboScaleAnim, { toValue: 1, friction: 5, tension: 220, useNativeDriver: true }).start();
               }
 
               // Scatter all circles to random new positions after release, then snap view back to centre
@@ -971,6 +976,14 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
   const VW = w * BOARD_MULT;
   const VH = h * BOARD_MULT;
   const now = Date.now(); // stable within a render frame
+
+  // Combo display — recomputed on every tick (500ms)
+  void tick;
+  const effectiveComboWindow = COMBO_WINDOW_MS + rebirthBonuses.extraComboWindowMs;
+  const timeSinceRelease = now - state.lastReleaseAt;
+  const comboActive = mode === "play" && state.comboCount >= 2 && timeSinceRelease < effectiveComboWindow;
+  const comboProgress = comboActive ? Math.max(0, 1 - timeSinceRelease / effectiveComboWindow) : 0;
+  const comboBonus = Math.round((state.comboCount - 1) * COMBO_BONUS_PER_STACK * 100);
 
   return (
     <View style={[styles.boardWrap, { backgroundColor: colors.boardBg }]} onLayout={onBoardLayout}>
@@ -1233,6 +1246,21 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
             ]}
           />
 
+          {/* ── Combo streak badge ────────────────────────────────────────────── */}
+          {comboActive ? (
+            <Animated.View
+              pointerEvents="none"
+              style={[styles.comboBadge, { transform: [{ scale: comboScaleAnim }] }]}
+            >
+              <Text style={styles.comboMultText}>×{state.comboCount}</Text>
+              <Text style={styles.comboLabel}>COMBO</Text>
+              <Text style={styles.comboBonus}>+{comboBonus}% bonus</Text>
+              <View style={styles.comboBarTrack}>
+                <View style={[styles.comboBarFill, { width: `${Math.round(comboProgress * 100)}%` }]} />
+              </View>
+            </Animated.View>
+          ) : null}
+
           {/* ── Chain reaction banner ─────────────────────────────────────────── */}
           <Animated.View
             pointerEvents="none"
@@ -1448,6 +1476,53 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.15)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  comboBadge: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    backgroundColor: "#7c3aed",
+    borderRadius: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    alignItems: "center",
+    gap: 2,
+    shadowColor: "#7c3aed",
+    shadowOpacity: 0.55,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    minWidth: 72,
+  },
+  comboMultText: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 28,
+    color: "#ffffff",
+    lineHeight: 32,
+  },
+  comboLabel: {
+    fontFamily: "Inter_700Bold",
+    fontSize: 10,
+    color: "#e9d5ff",
+    letterSpacing: 1.5,
+  },
+  comboBonus: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 11,
+    color: "#ddd6fe",
+    marginTop: 2,
+  },
+  comboBarTrack: {
+    width: "100%",
+    height: 4,
+    backgroundColor: "rgba(255,255,255,0.25)",
+    borderRadius: 2,
+    marginTop: 5,
+    overflow: "hidden",
+  },
+  comboBarFill: {
+    height: 4,
+    backgroundColor: "#c4b5fd",
+    borderRadius: 2,
   },
   chainReactBanner: {
     position: "absolute",
