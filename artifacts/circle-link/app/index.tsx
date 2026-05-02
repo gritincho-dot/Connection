@@ -64,84 +64,49 @@ function DecorativeCircle({
   );
 }
 
-type DeleteConfirmProps = {
-  slot: SaveSlotMeta;
-  onConfirm: () => void;
-  onCancel: () => void;
-};
-
-function DeleteConfirmModal({ slot, onConfirm, onCancel }: DeleteConfirmProps) {
-  return (
-    <View style={styles.modalOverlay}>
-      <View style={styles.confirmCard}>
-        <View style={styles.confirmIconRow}>
-          <View style={[styles.confirmIcon, { backgroundColor: "#fee2e2" }]}>
-            <Feather name="trash-2" size={22} color={DESTRUCTIVE} />
-          </View>
-        </View>
-        <Text style={styles.confirmTitle}>Delete Save {slot.slot + 1}?</Text>
-        <Text style={styles.confirmBody}>
-          This will permanently delete all progress on Save {slot.slot + 1}. This
-          cannot be undone.
-        </Text>
-        <View style={styles.confirmButtons}>
-          <TouchableOpacity onPress={onCancel} style={styles.cancelBtn}>
-            <Text style={styles.cancelBtnText}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={onConfirm} style={styles.deleteBtn}>
-            <Text style={styles.deleteBtnText}>Delete</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </View>
-  );
-}
-
 type SlotCardProps = {
   meta: SaveSlotMeta;
   onPress: () => void;
-  onDelete: () => void;
+  deleteMode: boolean;
 };
 
-function SlotCard({ meta, onPress, onDelete }: SlotCardProps) {
+function SlotCard({ meta, onPress, deleteMode }: SlotCardProps) {
+  const isTarget = deleteMode && meta.exists;
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.75}
-      style={[styles.slotCard, meta.hasWon && { borderColor: "#fbbf24", borderWidth: 2 }]}
+      style={[
+        styles.slotCard,
+        isTarget && { borderColor: DESTRUCTIVE, borderWidth: 2, backgroundColor: "#fff5f5" },
+        !isTarget && meta.hasWon && { borderColor: "#fbbf24", borderWidth: 2 },
+      ]}
     >
       <View style={styles.slotLeft}>
-        <View style={[styles.slotBadge, { backgroundColor: meta.exists ? (meta.hasWon ? "#fef3c7" : "#f0fdf4") : "#f0ede4" }]}>
-          <Text style={[styles.slotBadgeText, { color: meta.exists ? (meta.hasWon ? "#92400e" : PRIMARY) : MUTED }]}>
-            {meta.exists ? (meta.hasWon ? "👑" : "●") : "○"}
-          </Text>
+        <View style={[styles.slotBadge, { backgroundColor: isTarget ? "#fee2e2" : meta.exists ? (meta.hasWon ? "#fef3c7" : "#f0fdf4") : "#f0ede4" }]}>
+          {isTarget ? (
+            <Feather name="trash-2" size={18} color={DESTRUCTIVE} />
+          ) : (
+            <Text style={[styles.slotBadgeText, { color: meta.exists ? (meta.hasWon ? "#92400e" : PRIMARY) : MUTED }]}>
+              {meta.exists ? (meta.hasWon ? "👑" : "●") : "○"}
+            </Text>
+          )}
         </View>
         <View style={styles.slotInfo}>
-          <Text style={styles.slotTitle}>Save {meta.slot + 1}</Text>
+          <Text style={[styles.slotTitle, isTarget && { color: DESTRUCTIVE }]}>Save {meta.slot + 1}</Text>
           {meta.exists ? (
             <>
               <Text style={styles.slotSub}>
-                {meta.hasWon ? "🏆 Completed · " : ""}{meta.rebirthCount} rebirth{meta.rebirthCount !== 1 ? "s" : ""} · {formatNum(meta.totalLifetime)} earned
+                {isTarget ? "Tap to delete" : (meta.hasWon ? "🏆 Completed · " : "") + meta.rebirthCount + " rebirth" + (meta.rebirthCount !== 1 ? "s" : "") + " · " + formatNum(meta.totalLifetime) + " earned"}
               </Text>
-              <Text style={styles.slotTime}>{timeSince(meta.lastPlayed)}</Text>
+              {!isTarget && <Text style={styles.slotTime}>{timeSince(meta.lastPlayed)}</Text>}
             </>
           ) : (
             <Text style={styles.slotSub}>Empty — start a new game</Text>
           )}
         </View>
       </View>
-      <View style={styles.slotRight}>
-        {meta.exists ? (
-          <TouchableOpacity
-            onPress={(e) => { e.stopPropagation?.(); onDelete(); }}
-            hitSlop={10}
-            style={styles.slotDeleteBtn}
-          >
-            <Feather name="trash-2" size={16} color={DESTRUCTIVE} />
-          </TouchableOpacity>
-        ) : null}
-        <Feather name="chevron-right" size={18} color={MUTED} />
-      </View>
+      <Feather name={isTarget ? "x-circle" : "chevron-right"} size={18} color={isTarget ? DESTRUCTIVE : MUTED} />
     </TouchableOpacity>
   );
 }
@@ -222,12 +187,8 @@ function PlayModal({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { slots, selectSlot, deleteSlot } = useSave();
   const router = useRouter();
-  const [deletingSlot, setDeletingSlot] = useState<SaveSlotMeta | null>(null);
+  const [deleteMode, setDeleteMode] = useState(false);
   const [pickingDifficultyForSlot, setPickingDifficultyForSlot] = useState<SaveSlotMeta | null>(null);
-
-  const handleSelect = (meta: SaveSlotMeta) => {
-    setPickingDifficultyForSlot(meta);
-  };
 
   const handleDifficultySelect = (slot: 0 | 1 | 2, difficulty: DifficultyKey) => {
     selectSlot(slot, difficulty);
@@ -235,10 +196,12 @@ function PlayModal({ onClose }: { onClose: () => void }) {
     router.replace("/(tabs)");
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!deletingSlot) return;
-    await deleteSlot(deletingSlot.slot as 0 | 1 | 2);
-    setDeletingSlot(null);
+  const handleSlotPress = (meta: SaveSlotMeta) => {
+    if (deleteMode) {
+      if (meta.exists) deleteSlot(meta.slot as 0 | 1 | 2);
+    } else {
+      setPickingDifficultyForSlot(meta);
+    }
   };
 
   if (pickingDifficultyForSlot) {
@@ -257,23 +220,30 @@ function PlayModal({ onClose }: { onClose: () => void }) {
   return (
     <View style={[styles.modalOverlay]}>
       <View style={[styles.sheetCard, { paddingBottom: insets.bottom + 24 }]}>
-        {deletingSlot ? (
-          <DeleteConfirmModal
-            slot={deletingSlot}
-            onConfirm={handleDeleteConfirm}
-            onCancel={() => setDeletingSlot(null)}
-          />
-        ) : null}
         <View style={styles.sheetHandle} />
-        <Text style={styles.sheetTitle}>Choose Save File</Text>
-        <Text style={styles.sheetSub}>Tap a save to play · tap 🗑 to delete</Text>
+        <View style={styles.sheetTitleRow}>
+          <Text style={styles.sheetTitle}>Choose Save File</Text>
+          <TouchableOpacity
+            onPress={() => setDeleteMode((v) => !v)}
+            style={[styles.deleteModeBtn, deleteMode && styles.deleteModeBtnActive]}
+            activeOpacity={0.75}
+          >
+            <Feather name="trash-2" size={14} color={deleteMode ? "#fff" : DESTRUCTIVE} />
+            <Text style={[styles.deleteModeBtnText, deleteMode && { color: "#fff" }]}>
+              {deleteMode ? "Done" : "Delete"}
+            </Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={styles.sheetSub}>
+          {deleteMode ? "Tap a save to instantly delete it" : "Tap a save to play"}
+        </Text>
         <View style={styles.slotList}>
           {slots.map((meta) => (
             <SlotCard
               key={meta.slot}
               meta={meta}
-              onPress={() => handleSelect(meta)}
-              onDelete={() => { if (meta.exists) setDeletingSlot(meta); }}
+              onPress={() => handleSlotPress(meta)}
+              deleteMode={deleteMode}
             />
           ))}
         </View>
@@ -379,7 +349,7 @@ export default function MenuScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.footer}>Tap the trash icon on a save to delete it</Text>
+      <Text style={styles.footer}>Use Delete mode in the save screen to remove saves</Text>
     </View>
   );
 }
@@ -494,11 +464,36 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     marginBottom: 20,
   },
+  sheetTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
   sheetTitle: {
     fontFamily: "Inter_700Bold",
     fontSize: 22,
     color: FG,
-    marginBottom: 4,
+  },
+  deleteModeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: DESTRUCTIVE,
+    backgroundColor: "transparent",
+  },
+  deleteModeBtnActive: {
+    backgroundColor: DESTRUCTIVE,
+    borderColor: DESTRUCTIVE,
+  },
+  deleteModeBtnText: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    color: DESTRUCTIVE,
   },
   sheetSub: {
     fontFamily: "Inter_400Regular",
@@ -525,14 +520,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     flex: 1,
-  },
-  slotRight: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  slotDeleteBtn: {
-    padding: 4,
   },
   slotBadge: {
     width: 40,
@@ -575,72 +562,6 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_600SemiBold",
     fontSize: 15,
     color: FG,
-  },
-  confirmCard: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 10,
-    backgroundColor: CARD,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 28,
-    alignItems: "center",
-  },
-  confirmIconRow: {
-    marginBottom: 16,
-  },
-  confirmIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  confirmTitle: {
-    fontFamily: "Inter_700Bold",
-    fontSize: 20,
-    color: FG,
-    marginBottom: 10,
-  },
-  confirmBody: {
-    fontFamily: "Inter_400Regular",
-    fontSize: 14,
-    color: MUTED,
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 20,
-  },
-  confirmButtons: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  cancelBtn: {
-    flex: 1,
-    backgroundColor: "#f0ede4",
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  cancelBtnText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
-    color: FG,
-  },
-  deleteBtn: {
-    flex: 1,
-    backgroundColor: DESTRUCTIVE,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: "center",
-  },
-  deleteBtnText: {
-    fontFamily: "Inter_600SemiBold",
-    fontSize: 15,
-    color: "#fff",
   },
   statRow: {
     flexDirection: "row",

@@ -203,8 +203,8 @@ export function SettingsSheet({
             <Pressable
               onPress={() => {
                 onClose();
+                exitToMenu();
                 router.replace("/");
-                setTimeout(() => exitToMenu(), 80);
               }}
               style={[styles.mainMenuBtn]}
             >

@@ -55,8 +55,8 @@ export function WinModal({ visible, onClose }: { visible: boolean; onClose: () =
 
   const handleReturnToMenu = () => {
     onClose();
+    exitToMenu();
     router.replace("/");
-    setTimeout(() => exitToMenu(), 80);
   };
 
   const diff = getDifficulty(state.difficultyKey ?? "easy");
