@@ -93,6 +93,16 @@ export function ModeToolbar({ mode, onChangeMode, onResetView }: Props) {
           onChangeMode(mode === "upgrade" ? "play" : "upgrade");
         }}
       />
+      <ModeButton
+        active={mode === "delete"}
+        label="Delete"
+        iconName="trash-2"
+        accent="#dc2626"
+        onPress={() => {
+          tap("tick");
+          onChangeMode(mode === "delete" ? "play" : "delete");
+        }}
+      />
       {onResetView ? (
         <Pressable
           onPress={() => {

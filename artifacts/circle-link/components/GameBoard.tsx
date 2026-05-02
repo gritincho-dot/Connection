@@ -48,7 +48,7 @@ const DELETE_HIT = 18; // radius for the delete button in upgrade mode
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.5;
 
-export type Mode = "play" | "layout" | "upgrade";
+export type Mode = "play" | "layout" | "upgrade" | "delete";
 
 type Props = {
   mode: Mode;
@@ -418,26 +418,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     [boardSize, scaleRef],
   );
 
-  // Check if a touch is near the delete button of a circle (upgrade mode — top-right corner)
-  const findDeleteTargetAt = useCallback(
-    (x: number, y: number): CircleNode | null => {
-      const w = boardSize?.w ?? 0;
-      const h = boardSize?.h ?? 0;
-      const s = scaleRef.current;
-      const lx = (x - w / 2) / s + w / 2;
-      const ly = (y - h / 2) / s + h / 2;
-      for (const c of circlesRef.current) {
-        if (c.x === undefined || c.y === undefined) continue;
-        const bx = c.x + CIRCLE_RADIUS * 0.75;
-        const by = c.y - CIRCLE_RADIUS * 0.75;
-        const dx = lx - bx;
-        const dy = ly - by;
-        if (dx * dx + dy * dy <= DELETE_HIT * DELETE_HIT) return c;
-      }
-      return null;
-    },
-    [boardSize, scaleRef],
-  );
 
   const handlePinch = useCallback(
     (touches: { pageX: number; pageY: number }[]): boolean => {
@@ -499,16 +479,17 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
             return;
           }
 
-          if (mode === "upgrade") {
-            // Check if touching the delete button (top-right corner of circle)
-            const delTarget = findDeleteTargetAt(x, y);
-            if (delTarget) {
-              clearUpgradeHold();
+          if (mode === "delete") {
+            const hit = findCircleAt(x, y);
+            if (hit) {
               triggerHaptic("warn");
               sound.play("buzz", 1.1);
-              removeCircle(delTarget.id);
-              return;
+              removeCircle(hit.id);
             }
+            return;
+          }
+
+          if (mode === "upgrade") {
             const hit = findCircleAt(x, y);
             if (hit) {
               tapStartRef.current = { x, y, circleId: hit.id };
@@ -775,7 +756,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     [
       mode,
       findCircleAt,
-      findDeleteTargetAt,
       clearUpgradeHold,
       boardSize,
       moveCircle,
@@ -872,7 +852,14 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
   return (
     <View style={[styles.boardWrap, { backgroundColor: colors.boardBg }]} onLayout={onBoardLayout}>
       {boardSize ? (
-        <View {...panResponder.panHandlers} style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+        <View
+          {...panResponder.panHandlers}
+          style={[
+            StyleSheet.absoluteFill,
+            { overflow: "hidden" },
+            Platform.OS === "web" ? ({ userSelect: "none", WebkitUserSelect: "none" } as object) : {},
+          ]}
+        >
           <Animated.View
             style={[{ position: "absolute", left: 0, top: 0, width: w, height: h, transform: [{ scale }] }]}
           >
@@ -1046,22 +1033,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                     </View>
                   ) : null}
 
-                  {/* Delete button in upgrade mode (top-right corner of circle) */}
-                  {mode === "upgrade" ? (
-                    <View
-                      pointerEvents="none"
-                      style={[
-                        styles.removeBtn,
-                        {
-                          left: pos.x + CIRCLE_RADIUS * 0.75 - 9,
-                          top: pos.y - CIRCLE_RADIUS * 0.75 - 9,
-                          backgroundColor: "#dc2626",
-                        },
-                      ]}
-                    >
-                      <Text style={styles.removeBtnText}>×</Text>
-                    </View>
-                  ) : null}
                 </React.Fragment>
               );
             })}
@@ -1234,8 +1205,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
             {mode === "layout"
               ? "Drag to move · Pinch to zoom"
               : mode === "upgrade"
-                ? "Tap to upgrade/cleanse · × to delete · Hold 2s to rapid-upgrade"
-                : soloTapReady
+                ? "Tap to upgrade/cleanse · Hold 2s to rapid-upgrade"
+                : mode === "delete"
+                  ? "Tap a circle to delete it"
+                  : soloTapReady
                   ? "Only one circle — tap it to score (3 s cooldown)"
                   : "Swipe to chain, release to earn"}
           </Text>

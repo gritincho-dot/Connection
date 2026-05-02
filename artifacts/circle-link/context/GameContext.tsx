@@ -290,13 +290,14 @@ export function GameProvider({ children, slotKey, difficulty }: { children: Reac
 
   // Load persisted state when slotKey is available
   useEffect(() => {
+    const capturedSlotKey = slotKey;
     setState({ ...initial, circles: makeStartingCircles() });
     setLoaded(false);
     (async () => {
       const diff = getDifficulty(difficulty);
-      if (slotKey) {
+      if (capturedSlotKey) {
         try {
-          const raw = await AsyncStorage.getItem(slotKey);
+          const raw = await AsyncStorage.getItem(capturedSlotKey);
           if (raw) {
             const parsed = JSON.parse(raw) as Partial<GameState>;
             if (!parsed.circles || !Array.isArray(parsed.circles) || parsed.circles.length === 0) {
@@ -329,6 +330,14 @@ export function GameProvider({ children, slotKey, difficulty }: { children: Reac
       }
       setLoaded(true);
     })();
+    return () => {
+      if (capturedSlotKey) {
+        AsyncStorage.setItem(
+          capturedSlotKey,
+          JSON.stringify({ ...stateRef.current, lastPlayed: Date.now() }),
+        ).catch(() => {});
+      }
+    };
   }, [slotKey, difficulty]);
 
   // Persist on change
