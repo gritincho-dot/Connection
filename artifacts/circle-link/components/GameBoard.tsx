@@ -46,7 +46,7 @@ import { useSound } from "@/lib/sound";
 const CIRCLE_RADIUS = 32;
 const HIT_RADIUS = 44;
 const MARGIN = 48;
-const BOARD_MULT = 2; // virtual canvas is 2× the physical view in each dimension
+const BOARD_MULT = 1; // virtual canvas = physical view (no pan/zoom)
 const DELETE_HIT = 18; // radius for the delete button in upgrade mode
 
 type Bounds = { x0: number; y0: number; x1: number; y1: number };
@@ -252,21 +252,17 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
   useEffect(() => {
     if (!boardSize) return;
     const { w, h } = boardSize;
-    const VW = w * BOARD_MULT;
-    const VH = h * BOARD_MULT;
-    const bounds = fullBounds(VW, VH);
+    const bounds = fullBounds(w, h);
     const prev = prevCircleCountRef.current;
     const curr = state.circles.length;
     prevCircleCountRef.current = curr;
 
     if (curr > prev && prev > 0) {
-      // New circle bought — scatter every circle into the currently visible region
-      // so they land on-screen regardless of zoom/pan state
-      const visBounds = visibleBounds(VW, VH, w, h, panXRef.current, panYRef.current, scaleRef.current);
+      // New circle bought — scatter all circles within visible bounds
       const placed: Array<{ x: number; y: number }> = [];
       for (const c of state.circles) {
         initializedIds.current.add(c.id);
-        const pos = spreadSpot(visBounds, placed);
+        const pos = spreadSpot(bounds, placed);
         placed.push(pos);
         moveCircle(c.id, pos.x, pos.y);
       }
@@ -279,7 +275,7 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
         const unplaced = c.x === undefined || c.y === undefined;
         const outOfBounds =
           !unplaced &&
-          (c.x! < MARGIN || c.x! > VW - MARGIN || c.y! < MARGIN || c.y! > VH - MARGIN);
+          (c.x! < MARGIN || c.x! > w - MARGIN || c.y! < MARGIN || c.y! > h - MARGIN);
         if (!unplaced && !outOfBounds) continue;
         initializedIds.current.add(c.id);
         const pos = spreadSpot(bounds, placed);
@@ -530,18 +526,14 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
   const scatterAllCircles = useCallback(() => {
     if (!boardSize) return;
     const { w, h } = boardSize;
-    const VW = w * BOARD_MULT;
-    const VH = h * BOARD_MULT;
-    // Place circles in the currently visible canvas region so they land on-screen
-    // regardless of how far the user has panned or how much they've zoomed.
-    const bounds = visibleBounds(VW, VH, w, h, panXRef.current, panYRef.current, scaleRef.current);
+    const bounds = fullBounds(w, h);
     const placed: Array<{ x: number; y: number }> = [];
     for (const c of circlesRef.current) {
       const pos = spreadSpot(bounds, placed);
       placed.push(pos);
       moveCircle(c.id, pos.x, pos.y);
     }
-  }, [boardSize, moveCircle, scaleRef]);
+  }, [boardSize, moveCircle]);
 
   const panResponder = useMemo(
     () =>
@@ -552,7 +544,7 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
 
         onPanResponderGrant: (evt) => {
           const touches = evt.nativeEvent.touches;
-          if (touches.length >= 2) { handlePinch(touches); return; }
+          if (touches.length >= 2) return; // pinch ignored — zoom disabled
           const x = evt.nativeEvent.locationX;
           const y = evt.nativeEvent.locationY;
 
@@ -564,11 +556,8 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
               setDrag(d);
               triggerHaptic("light");
               sound.play("tick", 1.2);
-            } else {
-              // No circle hit — start panning the virtual canvas
-              isPanningRef.current = true;
-              panGestureStart.current = { sx: x, sy: y, startPx: panXRef.current, startPy: panYRef.current };
             }
+            // No circle hit — do nothing (no panning)
             return;
           }
 
@@ -613,47 +602,25 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
             popCircle(hit.id);
             triggerHaptic("light");
             sound.play("tick", 1.0);
-          } else {
-            // No circle hit — start panning
-            isPanningRef.current = true;
-            panGestureStart.current = { sx: x, sy: y, startPx: panXRef.current, startPy: panYRef.current };
-            setChain([]);
           }
+          // No circle hit — do nothing (no panning)
         },
 
         onPanResponderMove: (evt) => {
           const touches = evt.nativeEvent.touches;
-          if (touches.length >= 2) { handlePinch(touches); return; }
-          if (isPinchingRef.current) return;
+          if (touches.length >= 2) return; // pinch ignored — zoom disabled
           const x = evt.nativeEvent.locationX;
           const y = evt.nativeEvent.locationY;
-
-          // Board panning (shared across layout and play modes)
-          if (isPanningRef.current && panGestureStart.current) {
-            const gs = panGestureStart.current;
-            const w = boardSize?.w ?? 0;
-            const h = boardSize?.h ?? 0;
-            const maxPanX = (w * BOARD_MULT - w) / 2;
-            const maxPanY = (h * BOARD_MULT - h) / 2;
-            const newPx = clamp(gs.startPx + (x - gs.sx), -maxPanX, maxPanX);
-            const newPy = clamp(gs.startPy + (y - gs.sy), -maxPanY, maxPanY);
-            panXRef.current = newPx;
-            panYRef.current = newPy;
-            panAnim.setValue({ x: newPx, y: newPy });
-            return;
-          }
 
           if (mode === "layout") {
             const cur = dragRef.current;
             if (!cur || !boardSize) return;
             const w = boardSize.w;
             const h = boardSize.h;
-            const VW = w * BOARD_MULT;
-            const VH = h * BOARD_MULT;
-            const s = scaleRef.current;
-            const lx = (x - w / 2 - panXRef.current) / s + VW / 2;
-            const ly = (y - h / 2 - panYRef.current) / s + VH / 2;
-            const d = { id: cur.id, x: clamp(lx, MARGIN, VW - MARGIN), y: clamp(ly, MARGIN, VH - MARGIN) };
+            // With BOARD_MULT=1, VW=w and VH=h; scale/pan are always identity
+            const lx = x;
+            const ly = y;
+            const d = { id: cur.id, x: clamp(lx, MARGIN, w - MARGIN), y: clamp(ly, MARGIN, h - MARGIN) };
             dragRef.current = d;
             setDrag(d);
             return;
