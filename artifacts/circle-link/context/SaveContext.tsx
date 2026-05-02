@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
 
+import { DEFAULT_DIFFICULTY, type DifficultyKey } from "@/constants/game";
+
 const SLOT_KEY = (slot: number) => `@circle-link/slot-${slot}`;
 const GLOBAL_STATS_KEY = "@circle-link/global-stats";
 
@@ -11,6 +13,7 @@ export type SaveSlotMeta = {
   totalLifetime: number;
   lastPlayed: number;
   hasWon: boolean;
+  difficultyKey?: DifficultyKey;
 };
 
 export type WinRecord = {
@@ -27,10 +30,11 @@ export type GlobalStats = {
 
 type SaveCtx = {
   activeSlot: number | null;
+  activeDifficulty: DifficultyKey;
   slotKey: string | null;
   slots: SaveSlotMeta[];
   globalStats: GlobalStats;
-  selectSlot: (slot: 0 | 1 | 2) => void;
+  selectSlot: (slot: 0 | 1 | 2, difficulty: DifficultyKey) => void;
   deleteSlot: (slot: 0 | 1 | 2) => Promise<void>;
   recordWin: (record: Omit<WinRecord, "slotLabel">) => Promise<void>;
   exitToMenu: () => void;
@@ -61,6 +65,7 @@ async function readSlotMeta(slot: 0 | 1 | 2): Promise<SaveSlotMeta> {
       totalLifetime: (parsed.totalLifetime as number) ?? 0,
       lastPlayed: (parsed.lastPlayed as number) ?? 0,
       hasWon: (parsed.hasWon as boolean) ?? false,
+      difficultyKey: (parsed.difficultyKey as DifficultyKey) ?? DEFAULT_DIFFICULTY,
     };
   } catch {
     return emptyMeta(slot);
@@ -69,6 +74,7 @@ async function readSlotMeta(slot: 0 | 1 | 2): Promise<SaveSlotMeta> {
 
 export function SaveProvider({ children }: { children: React.ReactNode }) {
   const [activeSlot, setActiveSlot] = useState<number | null>(null);
+  const [activeDifficulty, setActiveDifficulty] = useState<DifficultyKey>(DEFAULT_DIFFICULTY);
   const [slots, setSlots] = useState<SaveSlotMeta[]>([
     emptyMeta(0), emptyMeta(1), emptyMeta(2),
   ]);
@@ -91,7 +97,8 @@ export function SaveProvider({ children }: { children: React.ReactNode }) {
     })();
   }, [refreshSlots]);
 
-  const selectSlot = useCallback((slot: 0 | 1 | 2) => {
+  const selectSlot = useCallback((slot: 0 | 1 | 2, difficulty: DifficultyKey) => {
+    setActiveDifficulty(difficulty);
     setActiveSlot(slot);
   }, []);
 
@@ -115,6 +122,7 @@ export function SaveProvider({ children }: { children: React.ReactNode }) {
 
   const exitToMenu = useCallback(() => {
     setActiveSlot(null);
+    setActiveDifficulty(DEFAULT_DIFFICULTY);
     refreshSlots();
   }, [refreshSlots]);
 
@@ -123,6 +131,7 @@ export function SaveProvider({ children }: { children: React.ReactNode }) {
   return (
     <SaveCtxRef.Provider value={{
       activeSlot,
+      activeDifficulty,
       slotKey,
       slots,
       globalStats,

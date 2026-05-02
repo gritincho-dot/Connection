@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useSave } from "@/context/SaveContext";
 import { useGame } from "@/context/GameContext";
+import { getDifficulty } from "@/constants/game";
 import { formatNum } from "@/lib/format";
 
 const PRIMARY = "#0f766e";
@@ -54,9 +55,11 @@ export function WinModal({ visible, onClose }: { visible: boolean; onClose: () =
 
   const handleReturnToMenu = () => {
     onClose();
-    exitToMenu();
     router.replace("/");
+    setTimeout(() => exitToMenu(), 80);
   };
+
+  const diff = getDifficulty(state.difficultyKey ?? "easy");
 
   if (!visible) return null;
 
@@ -76,7 +79,7 @@ export function WinModal({ visible, onClose }: { visible: boolean; onClose: () =
           <Text style={styles.trophy}>🏆</Text>
           <Text style={styles.title}>You Win!</Text>
           <Text style={styles.subtitle}>
-            You reached 1 Googol (10¹⁰⁰) points!
+            You reached {diff.subLabel} — {diff.description}!
           </Text>
 
           <View style={styles.statsRow}>

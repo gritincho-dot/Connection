@@ -66,13 +66,13 @@ export default function UpgradesScreen() {
             </Text>
           </View>
           <Text style={[styles.note, { color: colors.mutedForeground }]}>
-            New circles stay permanently. They may spawn corrupted ({Math.round(CORRUPT_CHANCE * 100)}% chance) — tap them in Upgrade mode to cleanse. Use the Layout tab to remove unwanted ones.
+            New circles stay permanently. They may spawn corrupted ({Math.round(CORRUPT_CHANCE * 100)}% chance) — tap them in Upgrade mode to cleanse. Use the delete button in Upgrade mode to remove unwanted circles.
           </Text>
           <UpgradeRow
             iconName="plus"
             iconColor="#16a34a"
             title="Addition Circle"
-            description="Safe and cheap. Adds its value to the running total. Always survives a chain release."
+            description="Cheapest circle. Adds its value to the chain total. Build a stack before multiplying for best results."
             level={`${addCount} / ${MAX_ADD}`}
             costLabel="pts"
             costValue={boardFull ? null : addCost}
@@ -85,7 +85,7 @@ export default function UpgradesScreen() {
             iconName="x"
             iconColor="#9333ea"
             title="Multiplication Circle"
-            description="Multiplies the running total. Chain it with add circles to amplify your score."
+            description="Multiplies the running total by its value. Place after additions to amplify gains."
             level={`${multCount} / ${MAX_MULT}`}
             costLabel="pts"
             costValue={boardFull ? null : multCost}
@@ -98,7 +98,7 @@ export default function UpgradesScreen() {
             iconName="trending-up"
             iconColor="#ea580c"
             title="Exponential Circle"
-            description="Huge burst — but destroys every add circle in the chain with it. Cash out wisely."
+            description="Raises the total to a fractional power. Extraordinary scaling — chain wisely."
             level={`${expCount} / ${MAX_EXP}`}
             costLabel="pts"
             costValue={boardFull ? null : expCost}

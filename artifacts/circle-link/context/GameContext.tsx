@@ -24,6 +24,7 @@ import {
   CORRUPT_PENALTY,
   CRIT_CHANCE,
   CRIT_MULTIPLIER,
+  DEFAULT_DIFFICULTY,
   DISCOUNT_PER_LVL,
   ENERGY_BONUS_PER_LVL,
   ENERGY_COST,
@@ -60,7 +61,9 @@ import {
   UPGRADE_COST_EXP,
   UPGRADE_COST_MULT,
   WIN_TARGET,
+  getDifficulty,
   computeRebirthBonuses,
+  type DifficultyKey,
   type RebirthBonuses,
 } from "@/constants/game";
 import { type BgVariant, DEFAULT_BG } from "@/lib/theme";
@@ -137,6 +140,8 @@ export type GameState = {
   achievements: string[];
   settings: Settings;
   hasWon: boolean;
+  difficultyKey: DifficultyKey;
+  winTarget: number;
 };
 
 let idCounter = 0;
@@ -190,6 +195,8 @@ const initial: GameState = {
     bgVariant: DEFAULT_BG,
   },
   hasWon: false,
+  difficultyKey: DEFAULT_DIFFICULTY,
+  winTarget: WIN_TARGET,
 };
 
 
@@ -273,7 +280,7 @@ function checkAchievements(s: GameState): string[] {
   return unlocked;
 }
 
-export function GameProvider({ children, slotKey }: { children: React.ReactNode; slotKey: string | null }) {
+export function GameProvider({ children, slotKey, difficulty }: { children: React.ReactNode; slotKey: string | null; difficulty: DifficultyKey }) {
   const [state, setState] = useState<GameState>(initial);
   const [loaded, setLoaded] = useState(false);
   const [pendingAchievement, setPendingAchievement] = useState<string | null>(null);
@@ -286,6 +293,7 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
     setState({ ...initial, circles: makeStartingCircles() });
     setLoaded(false);
     (async () => {
+      const diff = getDifficulty(difficulty);
       if (slotKey) {
         try {
           const raw = await AsyncStorage.getItem(slotKey);
@@ -306,7 +314,14 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
             }
             if (!parsed.settings) parsed.settings = initial.settings;
             if (!parsed.achievements) parsed.achievements = [];
-            setState({ ...initial, ...parsed });
+            setState({
+              ...initial,
+              ...parsed,
+              difficultyKey: difficulty,
+              winTarget: diff.winTarget,
+            });
+          } else {
+            setState({ ...initial, circles: makeStartingCircles(), difficultyKey: difficulty, winTarget: diff.winTarget });
           }
         } catch {
           // ignore
@@ -314,7 +329,7 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
       }
       setLoaded(true);
     })();
-  }, [slotKey]);
+  }, [slotKey, difficulty]);
 
   // Persist on change
   useEffect(() => {
@@ -338,7 +353,7 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
         const passive = Math.floor(totalVal * PASSIVE_INCOME_RATE * (1 + bonuses.passivePct / 100));
         if (passive === 0) return s;
         const newPoints = s.points + passive;
-        const won = newPoints >= WIN_TARGET;
+        const won = newPoints >= s.winTarget;
         return {
           ...s,
           points: newPoints,
@@ -560,7 +575,7 @@ export function GameProvider({ children, slotKey }: { children: React.ReactNode;
           bestChainLength: Math.max(s.bestChainLength, chain.length),
           bestSingleEarning: Math.max(s.bestSingleEarning, earned),
           circles: updatedCircles,
-          hasWon: s.hasWon || newPoints >= WIN_TARGET,
+          hasWon: s.hasWon || newPoints >= s.winTarget,
         };
 
         // Unlock achievements

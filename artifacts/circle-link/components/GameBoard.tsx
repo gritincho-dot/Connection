@@ -24,6 +24,8 @@ import {
   EXP_VALUE_DIVISOR,
   MEGA_THRESHOLD,
   MULT_DECAY_MS,
+  PERM_MULT_BONUS,
+  PRIME_BONUS,
   SOLO_TAP_COOLDOWN_MS,
   SURGE_THRESHOLD,
 } from "@/constants/game";
@@ -41,7 +43,7 @@ import { useSound } from "@/lib/sound";
 const CIRCLE_RADIUS = 32;
 const HIT_RADIUS = 44;
 const MARGIN = 48;
-const REMOVE_HIT = 18; // radius for the "×" remove target in layout mode
+const DELETE_HIT = 18; // radius for the delete button in upgrade mode
 
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.5;
@@ -242,6 +244,13 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
   // Tap tracking for upgrade mode
   const tapStartRef = useRef<{ x: number; y: number; circleId: string } | null>(null);
+  // Hold-to-rapid-upgrade (fires after 2 s hold, then repeats every 150 ms)
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const clearUpgradeHold = useCallback(() => {
+    if (holdTimerRef.current !== null) { clearTimeout(holdTimerRef.current); holdTimerRef.current = null; }
+    if (holdIntervalRef.current !== null) { clearInterval(holdIntervalRef.current); holdIntervalRef.current = null; }
+  }, []);
 
   // Solo tap: track touch start position and last fire time for cooldown
   const soloTapStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -409,8 +418,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     [boardSize, scaleRef],
   );
 
-  // Check if a touch is near the remove "×" button of a circle (layout mode)
-  const findRemoveTargetAt = useCallback(
+  // Check if a touch is near the delete button of a circle (upgrade mode — top-right corner)
+  const findDeleteTargetAt = useCallback(
     (x: number, y: number): CircleNode | null => {
       const w = boardSize?.w ?? 0;
       const h = boardSize?.h ?? 0;
@@ -419,12 +428,11 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
       const ly = (y - h / 2) / s + h / 2;
       for (const c of circlesRef.current) {
         if (c.x === undefined || c.y === undefined) continue;
-        // "×" button is top-right of circle
         const bx = c.x + CIRCLE_RADIUS * 0.75;
         const by = c.y - CIRCLE_RADIUS * 0.75;
         const dx = lx - bx;
         const dy = ly - by;
-        if (dx * dx + dy * dy <= REMOVE_HIT * REMOVE_HIT) return c;
+        if (dx * dx + dy * dy <= DELETE_HIT * DELETE_HIT) return c;
       }
       return null;
     },
@@ -482,14 +490,6 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           const y = evt.nativeEvent.locationY;
 
           if (mode === "layout") {
-            // Check if touching a remove "×" button
-            const removeTarget = findRemoveTargetAt(x, y);
-            if (removeTarget) {
-              triggerHaptic("warn");
-              sound.play("buzz", 1.1);
-              removeCircle(removeTarget.id);
-              return;
-            }
             const hit = findCircleAt(x, y);
             if (hit && hit.x !== undefined && hit.y !== undefined) {
               setDrag({ id: hit.id, x: hit.x, y: hit.y });
@@ -500,8 +500,32 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           }
 
           if (mode === "upgrade") {
+            // Check if touching the delete button (top-right corner of circle)
+            const delTarget = findDeleteTargetAt(x, y);
+            if (delTarget) {
+              clearUpgradeHold();
+              triggerHaptic("warn");
+              sound.play("buzz", 1.1);
+              removeCircle(delTarget.id);
+              return;
+            }
             const hit = findCircleAt(x, y);
-            if (hit) tapStartRef.current = { x, y, circleId: hit.id };
+            if (hit) {
+              tapStartRef.current = { x, y, circleId: hit.id };
+              // Start hold-to-rapid-upgrade timer
+              holdTimerRef.current = setTimeout(() => {
+                holdIntervalRef.current = setInterval(() => {
+                  const target = circlesRef.current.find((c) => c.id === hit.id);
+                  if (!target) { clearUpgradeHold(); return; }
+                  if (target.corrupted) {
+                    cleanseCircle(hit.id);
+                  } else {
+                    upgradeCircle(hit.id);
+                  }
+                  triggerHaptic("light");
+                }, 150);
+              }, 2000);
+            }
             return;
           }
 
@@ -590,6 +614,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           }
 
           if (mode === "upgrade") {
+            clearUpgradeHold();
             const start = tapStartRef.current;
             tapStartRef.current = null;
             if (!start) return;
@@ -737,10 +762,11 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
         },
 
         onPanResponderTerminate: () => {
+          clearUpgradeHold();
+          tapStartRef.current = null;
           setPointer(null);
           setChain([]);
           setDrag(null);
-          tapStartRef.current = null;
           soloTapStartRef.current = null;
           isPinchingRef.current = false;
           pinchInit.current = null;
@@ -749,7 +775,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     [
       mode,
       findCircleAt,
-      findRemoveTargetAt,
+      findDeleteTargetAt,
+      clearUpgradeHold,
       boardSize,
       moveCircle,
       reRollCircle,
@@ -807,10 +834,21 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     for (let i = 1; i < chain.length; i++) {
       const c = chain[i];
       const ev = effectiveValue(c, now2);
-      parts.push(c.corrupted ? `⚠${opLabel(c, ev)}` : opLabel(c, ev));
+      let label: string;
+      if (c.type === "mult") {
+        const prime = isPrimed(c, now2) ? (1 + PRIME_BONUS) : 1;
+        const effectiveMult = ev * prime * (1 + state.permMult * PERM_MULT_BONUS);
+        const dispVal = effectiveMult % 1 === 0
+          ? effectiveMult.toFixed(0)
+          : effectiveMult.toFixed(1);
+        label = `×${dispVal}`;
+      } else {
+        label = opLabel(c, ev);
+      }
+      parts.push(c.corrupted ? `⚠${label}` : label);
     }
     return parts.join(" ");
-  }, [chain]);
+  }, [chain, state.permMult]);
 
   // Whether solo tap is possible this render (exactly 1 circle on the board)
   const soloTapReady = useMemo(() => {
@@ -1008,8 +1046,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                     </View>
                   ) : null}
 
-                  {/* Remove "×" button in layout mode */}
-                  {mode === "layout" ? (
+                  {/* Delete button in upgrade mode (top-right corner of circle) */}
+                  {mode === "upgrade" ? (
                     <View
                       pointerEvents="none"
                       style={[
@@ -1154,7 +1192,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
               ]}
             >
               <Text style={[styles.formulaText, { color: colors.foreground }]}>
-                {formulaPreview} = {formatNum(liveRate)}
+                {formulaPreview} → {formatNum(liveRate)}
                 {chain.some((c) => c.type === "exp") ? " 💥" : ""}
                 {chain.some((c) => c.corrupted) ? " ⚠" : ""}
               </Text>
@@ -1194,9 +1232,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
         <View style={[styles.modeHint, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.modeHintText, { color: colors.mutedForeground }]}>
             {mode === "layout"
-              ? "Drag to move • Tap × to remove • Pinch to zoom"
+              ? "Drag to move · Pinch to zoom"
               : mode === "upgrade"
-                ? "Tap to re-roll • Tap ⚠ circles to cleanse"
+                ? "Tap to upgrade/cleanse · × to delete · Hold 2s to rapid-upgrade"
                 : soloTapReady
                   ? "Only one circle — tap it to score (3 s cooldown)"
                   : "Swipe to chain, release to earn"}

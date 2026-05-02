@@ -45,9 +45,9 @@ function RootLayoutNav() {
 }
 
 function AppCore({ children }: { children: React.ReactNode }) {
-  const { slotKey } = useSave();
+  const { slotKey, activeDifficulty } = useSave();
   return (
-    <GameProvider key={slotKey ?? "__menu__"} slotKey={slotKey}>
+    <GameProvider key={slotKey ?? "__menu__"} slotKey={slotKey} difficulty={activeDifficulty}>
       <ThemedShell>{children}</ThemedShell>
     </GameProvider>
   );

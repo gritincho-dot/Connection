@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import React from "react";
+import React, { useRef } from "react";
 import {
   Platform,
   Pressable,
@@ -24,6 +24,7 @@ type Props = {
   currency: "points" | "cp";
   affordable: boolean;
   maxed?: boolean;
+  enableHold?: boolean;
   onBuy: () => boolean | void;
 };
 
@@ -38,6 +39,7 @@ export function UpgradeRow({
   currency,
   affordable,
   maxed,
+  enableHold = false,
   onBuy,
 }: Props) {
   const colors = useColors();
@@ -45,14 +47,25 @@ export function UpgradeRow({
   const accent = iconColor ?? colors.primary;
   const disabled = maxed || costValue === null;
 
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const clearHold = () => {
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+    if (holdIntervalRef.current !== null) {
+      clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
+  };
+
   const handlePress = () => {
     if (disabled) return;
     if (!affordable) {
-      // fail feedback
       if (Platform.OS !== "web") {
-        Haptics.notificationAsync(
-          Haptics.NotificationFeedbackType.Warning,
-        ).catch(() => {});
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
       }
       sound.play("buzz", 1.0);
       return;
@@ -61,15 +74,34 @@ export function UpgradeRow({
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
     const result = onBuy();
-    // play success unless explicitly returned false
     if (result !== false) {
       sound.play("ding", 1.0);
     }
   };
 
+  const handlePressIn = () => {
+    if (!enableHold || disabled || !affordable) return;
+    holdTimerRef.current = setTimeout(() => {
+      holdIntervalRef.current = setInterval(() => {
+        if (!affordable) { clearHold(); return; }
+        if (Platform.OS !== "web") {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        }
+        const result = onBuy();
+        if (result !== false) sound.play("tick", 1.0);
+      }, 150);
+    }, 2000);
+  };
+
+  const handlePressOut = () => {
+    clearHold();
+  };
+
   return (
     <Pressable
       onPress={handlePress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
       disabled={disabled}
       style={({ pressed }) => [
         styles.row,

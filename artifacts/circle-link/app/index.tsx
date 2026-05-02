@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Modal,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,6 +12,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { DIFFICULTIES, type Difficulty, type DifficultyKey } from "@/constants/game";
 import { useSave, type SaveSlotMeta } from "@/context/SaveContext";
 import { formatDate, formatNum } from "@/lib/format";
 
@@ -135,14 +137,91 @@ function SlotCard({ meta, onPress, onLongPress }: SlotCardProps) {
   );
 }
 
+type DifficultyPickerProps = {
+  slot: 0 | 1 | 2;
+  currentDifficulty?: DifficultyKey;
+  onSelect: (slot: 0 | 1 | 2, difficulty: DifficultyKey) => void;
+  onBack: () => void;
+};
+
+function DifficultyPicker({ slot, currentDifficulty, onSelect, onBack }: DifficultyPickerProps) {
+  const insets = useSafeAreaInsets();
+  const [selected, setSelected] = useState<DifficultyKey>(currentDifficulty ?? "easy");
+
+  return (
+    <View style={[styles.sheetCard, { paddingBottom: insets.bottom + 24 }]}>
+      <View style={styles.sheetHandle} />
+      <View style={styles.difficultyHeader}>
+        <Pressable onPress={onBack} hitSlop={10} style={styles.backBtn}>
+          <Feather name="arrow-left" size={18} color={MUTED} />
+        </Pressable>
+        <Text style={styles.sheetTitle}>Choose Difficulty</Text>
+      </View>
+      <Text style={styles.sheetSub}>Save {slot + 1} — pick your challenge</Text>
+
+      <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 8 }}>
+          {DIFFICULTIES.map((d: Difficulty) => {
+            const active = selected === d.key;
+            return (
+              <Pressable
+                key={d.key}
+                onPress={() => setSelected(d.key)}
+                style={[
+                  styles.diffCard,
+                  {
+                    borderColor: active ? d.color : BORDER,
+                    borderWidth: active ? 2 : 1,
+                    backgroundColor: active ? d.color + "11" : CARD,
+                  },
+                ]}
+              >
+                <View style={styles.diffLeft}>
+                  <Text style={styles.diffEmoji}>{d.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={styles.diffTitleRow}>
+                      <Text style={[styles.diffLabel, { color: FG }]}>{d.label}</Text>
+                      <Text style={[styles.diffSubLabel, { color: d.color }]}>{d.subLabel}</Text>
+                    </View>
+                    <Text style={[styles.diffDesc, { color: MUTED }]}>{d.description}</Text>
+                  </View>
+                </View>
+                {active ? (
+                  <Feather name="check-circle" size={20} color={d.color} />
+                ) : (
+                  <Feather name="circle" size={20} color={BORDER} />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+      </ScrollView>
+
+      <TouchableOpacity
+        onPress={() => onSelect(slot, selected)}
+        style={[styles.primaryBtn, { marginTop: 16 }]}
+        activeOpacity={0.85}
+      >
+        <Feather name="play" size={18} color="#fff" />
+        <Text style={styles.primaryBtnText}>Start</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 function PlayModal({ onClose }: { onClose: () => void }) {
   const insets = useSafeAreaInsets();
   const { slots, selectSlot, deleteSlot } = useSave();
   const router = useRouter();
   const [deletingSlot, setDeletingSlot] = useState<SaveSlotMeta | null>(null);
+  const [pickingDifficultyForSlot, setPickingDifficultyForSlot] = useState<SaveSlotMeta | null>(null);
 
-  const handleSelect = (slot: 0 | 1 | 2) => {
-    selectSlot(slot);
+  const handleSelect = (meta: SaveSlotMeta) => {
+    setPickingDifficultyForSlot(meta);
+  };
+
+  const handleDifficultySelect = (slot: 0 | 1 | 2, difficulty: DifficultyKey) => {
+    selectSlot(slot, difficulty);
     onClose();
     router.replace("/(tabs)");
   };
@@ -152,6 +231,19 @@ function PlayModal({ onClose }: { onClose: () => void }) {
     await deleteSlot(deletingSlot.slot as 0 | 1 | 2);
     setDeletingSlot(null);
   };
+
+  if (pickingDifficultyForSlot) {
+    return (
+      <View style={styles.modalOverlay}>
+        <DifficultyPicker
+          slot={pickingDifficultyForSlot.slot as 0 | 1 | 2}
+          currentDifficulty={pickingDifficultyForSlot.difficultyKey}
+          onSelect={handleDifficultySelect}
+          onBack={() => setPickingDifficultyForSlot(null)}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.modalOverlay]}>
@@ -171,7 +263,7 @@ function PlayModal({ onClose }: { onClose: () => void }) {
             <SlotCard
               key={meta.slot}
               meta={meta}
-              onPress={() => handleSelect(meta.slot as 0 | 1 | 2)}
+              onPress={() => handleSelect(meta)}
               onLongPress={() => {
                 if (meta.exists) setDeletingSlot(meta);
               }}
@@ -215,7 +307,7 @@ function StatsModal({ onClose }: { onClose: () => void }) {
             <Text style={styles.emptyWinsIcon}>🏆</Text>
             <Text style={styles.emptyWinsTitle}>No wins yet</Text>
             <Text style={styles.emptyWinsSub}>
-              Reach 1 Googol (10¹⁰⁰) points to earn a win!
+              Reach your goal to earn a win!
             </Text>
           </View>
         ) : (
@@ -265,7 +357,7 @@ export default function MenuScreen() {
         </View>
         <Text style={styles.title}>Circle Link</Text>
         <Text style={styles.subtitle}>Chain · Multiply · Ascend</Text>
-        <Text style={styles.goal}>Goal: reach 10¹⁰⁰ points</Text>
+        <Text style={styles.goal}>Choose your difficulty after picking a save</Text>
       </View>
 
       <View style={styles.menuSection}>
@@ -330,6 +422,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     borderRadius: 999,
     overflow: "hidden",
+    textAlign: "center",
   },
   menuSection: {
     width: "100%",
@@ -617,5 +710,50 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
     fontSize: 13,
     color: PRIMARY,
+  },
+  difficultyHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 4,
+  },
+  backBtn: {
+    padding: 4,
+  },
+  diffCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 14,
+  },
+  diffLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  diffEmoji: {
+    fontSize: 24,
+    width: 32,
+    textAlign: "center",
+  },
+  diffTitleRow: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    gap: 8,
+    marginBottom: 2,
+  },
+  diffLabel: {
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 15,
+  },
+  diffSubLabel: {
+    fontFamily: "Inter_500Medium",
+    fontSize: 12,
+  },
+  diffDesc: {
+    fontFamily: "Inter_400Regular",
+    fontSize: 12,
+    lineHeight: 16,
   },
 });

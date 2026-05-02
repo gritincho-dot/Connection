@@ -128,8 +128,36 @@ export const SURGE_BONUS = 0.25;     // +25%
 export const MEGA_THRESHOLD = 7;     // chain ≥ 7 circles → Mega Surge
 export const MEGA_BONUS = 0.40;      // additional +40%
 
-// Win condition: player must reach this many points
+// Win condition base (Easy difficulty)
 export const WIN_TARGET = 1e100;
+
+// ─── Difficulty system ────────────────────────────────────────────────────────
+export type DifficultyKey = "easy" | "medium" | "hard" | "insane" | "hell" | "tree3";
+
+export type Difficulty = {
+  key: DifficultyKey;
+  label: string;
+  subLabel: string;
+  description: string;
+  winTarget: number;
+  emoji: string;
+  color: string;
+};
+
+export const DIFFICULTIES: Difficulty[] = [
+  { key: "easy",   label: "Easy",               subLabel: "Googol",          description: "Reach 10¹⁰⁰ points",           winTarget: 1e100,            emoji: "🟢", color: "#16a34a" },
+  { key: "medium", label: "Medium",              subLabel: "Googolplex",      description: "Reach 10¹⁵⁰ points",           winTarget: 1e150,            emoji: "🔵", color: "#2563eb" },
+  { key: "hard",   label: "Hard",                subLabel: "Googolexian",     description: "Reach 10²⁰⁰ points",           winTarget: 1e200,            emoji: "🟠", color: "#ea580c" },
+  { key: "insane", label: "Insane",              subLabel: "Graham's Number", description: "Reach 10²⁵⁰ points",           winTarget: 1e250,            emoji: "🔴", color: "#dc2626" },
+  { key: "hell",   label: "Hell",                subLabel: "Rayo's Number",   description: "Reach 10³⁰⁰ points",           winTarget: 1e300,            emoji: "💀", color: "#7c3aed" },
+  { key: "tree3",  label: "Don't attempt this",  subLabel: "TREE(3)",         description: "Reach the edge of computation", winTarget: Number.MAX_VALUE, emoji: "☠️", color: "#1a1714" },
+];
+
+export const DEFAULT_DIFFICULTY: DifficultyKey = "easy";
+
+export function getDifficulty(key: DifficultyKey): Difficulty {
+  return DIFFICULTIES.find((d) => d.key === key) ?? DIFFICULTIES[0];
+}
 
 export type Achievement = {
   id: string;
