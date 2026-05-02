@@ -244,6 +244,7 @@ export default function RebirthScreen() {
             currency="cp"
             affordable={state.circlePoints >= costs.permPower}
             maxed={false}
+            enableHold
             onBuy={buyPermPower}
           />
           <UpgradeRow
@@ -257,6 +258,7 @@ export default function RebirthScreen() {
             currency="cp"
             affordable={state.circlePoints >= costs.permMult}
             maxed={false}
+            enableHold
             onBuy={buyPermMult}
           />
           <UpgradeRow
@@ -273,6 +275,7 @@ export default function RebirthScreen() {
               state.circlePoints >= costs.permDiscount
             }
             maxed={costs.permDiscount === null}
+            enableHold
             onBuy={buyPermDiscount}
           />
         </View>

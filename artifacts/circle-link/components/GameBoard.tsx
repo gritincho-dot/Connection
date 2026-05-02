@@ -504,6 +504,7 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                     upgradeCircle(hit.id);
                   }
                   triggerHaptic("light");
+                  sound.play("tick", 1.2);
                 }, 150);
               }, 2000);
             }

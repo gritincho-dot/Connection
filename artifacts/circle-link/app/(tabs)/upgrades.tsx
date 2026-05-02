@@ -51,6 +51,7 @@ export default function UpgradesScreen() {
             costValue={energyCost}
             currency="points"
             affordable={state.points >= energyCost}
+            enableHold
             onBuy={buyEnergy}
           />
         </View>
@@ -79,6 +80,7 @@ export default function UpgradesScreen() {
             currency="points"
             affordable={!boardFull && addCost !== null && state.points >= addCost}
             maxed={costs.add === null || boardFull}
+            enableHold
             onBuy={() => addCircle("add")}
           />
           <UpgradeRow
@@ -92,6 +94,7 @@ export default function UpgradesScreen() {
             currency="points"
             affordable={!boardFull && multCost !== null && state.points >= multCost}
             maxed={costs.mult === null || boardFull}
+            enableHold
             onBuy={() => addCircle("mult")}
           />
           <UpgradeRow
@@ -105,6 +108,7 @@ export default function UpgradesScreen() {
             currency="points"
             affordable={!boardFull && expCost !== null && state.points >= expCost}
             maxed={costs.exp === null || boardFull}
+            enableHold
             onBuy={() => addCircle("exp")}
           />
         </View>
