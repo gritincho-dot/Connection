@@ -100,15 +100,13 @@ function DeleteConfirmModal({ slot, onConfirm, onCancel }: DeleteConfirmProps) {
 type SlotCardProps = {
   meta: SaveSlotMeta;
   onPress: () => void;
-  onLongPress: () => void;
+  onDelete: () => void;
 };
 
-function SlotCard({ meta, onPress, onLongPress }: SlotCardProps) {
+function SlotCard({ meta, onPress, onDelete }: SlotCardProps) {
   return (
     <TouchableOpacity
       onPress={onPress}
-      onLongPress={onLongPress}
-      delayLongPress={600}
       activeOpacity={0.75}
       style={[styles.slotCard, meta.hasWon && { borderColor: "#fbbf24", borderWidth: 2 }]}
     >
@@ -132,7 +130,18 @@ function SlotCard({ meta, onPress, onLongPress }: SlotCardProps) {
           )}
         </View>
       </View>
-      <Feather name="chevron-right" size={18} color={MUTED} />
+      <View style={styles.slotRight}>
+        {meta.exists ? (
+          <TouchableOpacity
+            onPress={(e) => { e.stopPropagation?.(); onDelete(); }}
+            hitSlop={10}
+            style={styles.slotDeleteBtn}
+          >
+            <Feather name="trash-2" size={16} color={DESTRUCTIVE} />
+          </TouchableOpacity>
+        ) : null}
+        <Feather name="chevron-right" size={18} color={MUTED} />
+      </View>
     </TouchableOpacity>
   );
 }
@@ -257,16 +266,14 @@ function PlayModal({ onClose }: { onClose: () => void }) {
         ) : null}
         <View style={styles.sheetHandle} />
         <Text style={styles.sheetTitle}>Choose Save File</Text>
-        <Text style={styles.sheetSub}>Long-press a save to delete it</Text>
+        <Text style={styles.sheetSub}>Tap a save to play · tap 🗑 to delete</Text>
         <View style={styles.slotList}>
           {slots.map((meta) => (
             <SlotCard
               key={meta.slot}
               meta={meta}
               onPress={() => handleSelect(meta)}
-              onLongPress={() => {
-                if (meta.exists) setDeletingSlot(meta);
-              }}
+              onDelete={() => { if (meta.exists) setDeletingSlot(meta); }}
             />
           ))}
         </View>
@@ -372,7 +379,7 @@ export default function MenuScreen() {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.footer}>Long-press a save slot to delete it</Text>
+      <Text style={styles.footer}>Tap the trash icon on a save to delete it</Text>
     </View>
   );
 }
@@ -518,6 +525,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 12,
     flex: 1,
+  },
+  slotRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  slotDeleteBtn: {
+    padding: 4,
   },
   slotBadge: {
     width: 40,
