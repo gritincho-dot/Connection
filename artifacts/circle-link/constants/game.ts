@@ -56,11 +56,11 @@ export const PERM_MULT_BONUS = 0.2;
 export const DISCOUNT_PER_LVL = 0.1;
 
 // Circle type limits
-export const MAX_ADD = 6;
-export const MAX_MULT = 3;
-export const MAX_EXP = 2;
+export const MAX_ADD = 12;
+export const MAX_MULT = 6;
+export const MAX_EXP = 4;
 // Hard cap on total circles on the board at once (can increase via rebirth rewards)
-export const MAX_TOTAL_CIRCLES = 10;
+export const MAX_TOTAL_CIRCLES = 20;
 
 // Exp circle exponent divisor: value/EXP_VALUE_DIVISOR controls how steep the power is
 export const EXP_VALUE_DIVISOR = 14;
