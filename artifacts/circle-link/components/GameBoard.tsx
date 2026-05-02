@@ -43,7 +43,7 @@ import { useSound } from "@/lib/sound";
 const CIRCLE_RADIUS = 32;
 const HIT_RADIUS = 44;
 const MARGIN = 48;
-const BOARD_MULT = 3; // virtual canvas is 3× the physical view in each dimension
+const BOARD_MULT = 2; // virtual canvas is 2× the physical view in each dimension
 const DELETE_HIT = 18; // radius for the delete button in upgrade mode
 
 type Bounds = { x0: number; y0: number; x1: number; y1: number };
@@ -213,11 +213,13 @@ export function GameBoard({ mode, scale, scaleRef, panAnim, panXRef, panYRef }: 
     prevCircleCountRef.current = curr;
 
     if (curr > prev && prev > 0) {
-      // New circle bought — scatter every circle using spread placement across the full virtual canvas
+      // New circle bought — scatter every circle into the currently visible region
+      // so they land on-screen regardless of zoom/pan state
+      const visBounds = visibleBounds(VW, VH, w, h, panXRef.current, panYRef.current, scaleRef.current);
       const placed: Array<{ x: number; y: number }> = [];
       for (const c of state.circles) {
         initializedIds.current.add(c.id);
-        const pos = spreadSpot(bounds, placed);
+        const pos = spreadSpot(visBounds, placed);
         placed.push(pos);
         moveCircle(c.id, pos.x, pos.y);
       }
