@@ -24,6 +24,7 @@ import {
   EXP_VALUE_DIVISOR,
   MEGA_THRESHOLD,
   MULT_DECAY_MS,
+  PASSIVE_INCOME_RATE,
   PERM_MULT_BONUS,
   PRIME_BONUS,
   SOLO_TAP_COOLDOWN_MS,
@@ -172,7 +173,16 @@ type Particle = {
   anim: Animated.Value;
 };
 
+type PassiveFloat = {
+  id: number;
+  sx: number;
+  sy: number;
+  amount: number;
+  anim: Animated.Value;
+};
+
 let particleId = 0;
+let passiveFloatId = 0;
 
 export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef, panYRef }: Props) {
   const colors = useColors();
@@ -190,6 +200,7 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
     removeCircle,
     upgradeCostFor,
     cleanseCostFor,
+    rebirthBonuses,
   } = useGame();
 
   // Tick every 500ms so expiry arcs and exhaust timers stay current
@@ -198,6 +209,39 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
     const id = setInterval(() => setTick((t) => t + 1), 500);
     return () => clearInterval(id);
   }, []);
+
+  // Passive income float texts — spawn per circle every second in play mode
+  const [passiveFloats, setPassiveFloats] = useState<PassiveFloat[]>([]);
+  const rebirthBonusesRef = useRef(rebirthBonuses);
+  rebirthBonusesRef.current = rebirthBonuses;
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!boardSize || mode !== "play") return;
+      const { w, h } = boardSize;
+      const VW = w * BOARD_MULT;
+      const VH = h * BOARD_MULT;
+      const sV = scaleRef.current;
+      const bonusMult = 1 + rebirthBonusesRef.current.passivePct / 100;
+      const newFloats: PassiveFloat[] = [];
+      for (const c of circlesRef.current) {
+        if (c.x === undefined || c.y === undefined) continue;
+        const amount = Math.floor(c.value * PASSIVE_INCOME_RATE * bonusMult);
+        if (amount <= 0) continue;
+        const sx = (c.x - VW / 2) * sV + w / 2 + panXRef.current;
+        const sy = (c.y - VH / 2) * sV + h / 2 + panYRef.current;
+        if (sx < -30 || sx > w + 30 || sy < -30 || sy > h + 30) continue;
+        newFloats.push({ id: passiveFloatId++, sx, sy, amount, anim: new Animated.Value(0) });
+      }
+      if (newFloats.length === 0) return;
+      setPassiveFloats((prev) => [...prev, ...newFloats]);
+      newFloats.forEach((f) => {
+        Animated.timing(f.anim, { toValue: 1, duration: 1100, useNativeDriver: true }).start(() => {
+          setPassiveFloats((prev) => prev.filter((x) => x.id !== f.id));
+        });
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [mode]);
 
   const [boardSize, setBoardSize] = useState<{ w: number; h: number } | null>(null);
   const initializedIds = useRef<Set<string>>(new Set());
@@ -1257,6 +1301,27 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
             </Animated.View>
           ) : null}
 
+          {/* ── Passive income float texts ────────────────────────────────────── */}
+          {passiveFloats.map((f) => (
+            <Animated.Text
+              key={`pf-${f.id}`}
+              pointerEvents="none"
+              style={[
+                styles.passiveFloat,
+                {
+                  left: f.sx - 20,
+                  top: f.sy - CIRCLE_RADIUS - 8,
+                  opacity: f.anim.interpolate({ inputRange: [0, 0.12, 0.75, 1], outputRange: [0, 0.72, 0.72, 0] }),
+                  transform: [
+                    { translateY: f.anim.interpolate({ inputRange: [0, 1], outputRange: [0, -40] }) },
+                  ],
+                },
+              ]}
+            >
+              +{formatNum(f.amount)}
+            </Animated.Text>
+          ))}
+
           {/* ── Earned float text ─────────────────────────────────────────────── */}
           {earnState ? (
             <Animated.Text
@@ -1366,6 +1431,14 @@ const styles = StyleSheet.create({
     textShadowColor: "rgba(0,0,0,0.18)",
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 4,
+  },
+  passiveFloat: {
+    position: "absolute",
+    fontFamily: "Inter_600SemiBold",
+    fontSize: 12,
+    color: "#16a34a",
+    width: 40,
+    textAlign: "center",
   },
   earnText: {
     position: "absolute",
