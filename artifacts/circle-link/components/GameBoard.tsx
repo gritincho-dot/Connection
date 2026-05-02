@@ -43,7 +43,28 @@ import { useSound } from "@/lib/sound";
 const CIRCLE_RADIUS = 32;
 const HIT_RADIUS = 44;
 const MARGIN = 48;
+const BOARD_MULT = 3; // virtual canvas is 3× the physical view in each dimension
 const DELETE_HIT = 18; // radius for the delete button in upgrade mode
+
+type Bounds = { x0: number; y0: number; x1: number; y1: number };
+
+function fullBounds(vw: number, vh: number): Bounds {
+  return { x0: MARGIN, y0: MARGIN, x1: vw - MARGIN, y1: vh - MARGIN };
+}
+
+/** Computes the visible canvas region (clamped to board edges) at given zoom/pan. */
+function visibleBounds(vw: number, vh: number, w: number, h: number, panX: number, panY: number, s: number): Bounds {
+  const cx = vw / 2 - panX / s;
+  const cy = vh / 2 - panY / s;
+  const halfW = w / (2 * s);
+  const halfH = h / (2 * s);
+  return {
+    x0: Math.max(MARGIN, cx - halfW),
+    y0: Math.max(MARGIN, cy - halfH),
+    x1: Math.min(vw - MARGIN, cx + halfW),
+    y1: Math.min(vh - MARGIN, cy + halfH),
+  };
+}
 
 const MIN_SCALE = 0.6;
 const MAX_SCALE = 2.5;
@@ -55,6 +76,9 @@ type Props = {
   onShuffle?: () => void;
   scale: Animated.Value;
   scaleRef: React.MutableRefObject<number>;
+  panAnim: Animated.ValueXY;
+  panXRef: React.MutableRefObject<number>;
+  panYRef: React.MutableRefObject<number>;
 };
 
 // Base colors by type (non-corrupted)
@@ -97,10 +121,10 @@ const triggerHaptic = (
   else Haptics.selectionAsync().catch(() => {});
 };
 
-function randomSpot(w: number, h: number): { x: number; y: number } {
+function randomSpot(bounds: Bounds): { x: number; y: number } {
   return {
-    x: MARGIN + Math.random() * (w - MARGIN * 2),
-    y: MARGIN + Math.random() * (h - MARGIN * 2),
+    x: bounds.x0 + Math.random() * (bounds.x1 - bounds.x0),
+    y: bounds.y0 + Math.random() * (bounds.y1 - bounds.y0),
   };
 }
 
@@ -109,16 +133,15 @@ function randomSpot(w: number, h: number): { x: number; y: number } {
  * circles by trying `attempts` random candidates and keeping the best one.
  */
 function spreadSpot(
-  w: number,
-  h: number,
+  bounds: Bounds,
   placed: Array<{ x: number; y: number }>,
   attempts = 60,
 ): { x: number; y: number } {
-  if (placed.length === 0) return randomSpot(w, h);
-  let best = randomSpot(w, h);
+  if (placed.length === 0) return randomSpot(bounds);
+  let best = randomSpot(bounds);
   let bestDist = 0;
   for (let i = 0; i < attempts; i++) {
-    const candidate = randomSpot(w, h);
+    const candidate = randomSpot(bounds);
     let minDist = Infinity;
     for (const p of placed) {
       const d = Math.hypot(candidate.x - p.x, candidate.y - p.y);
@@ -150,7 +173,7 @@ type Particle = {
 
 let particleId = 0;
 
-export function GameBoard({ mode, scale, scaleRef }: Props) {
+export function GameBoard({ mode, scale, scaleRef, panAnim, panXRef, panYRef }: Props) {
   const colors = useColors();
   const sound = useSound();
   const {
@@ -182,22 +205,24 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
   useEffect(() => {
     if (!boardSize) return;
     const { w, h } = boardSize;
+    const VW = w * BOARD_MULT;
+    const VH = h * BOARD_MULT;
+    const bounds = fullBounds(VW, VH);
     const prev = prevCircleCountRef.current;
     const curr = state.circles.length;
     prevCircleCountRef.current = curr;
 
     if (curr > prev && prev > 0) {
-      // New circle bought — scatter every circle using spread placement
+      // New circle bought — scatter every circle using spread placement across the full virtual canvas
       const placed: Array<{ x: number; y: number }> = [];
       for (const c of state.circles) {
         initializedIds.current.add(c.id);
-        const pos = spreadSpot(w, h, placed);
+        const pos = spreadSpot(bounds, placed);
         placed.push(pos);
         moveCircle(c.id, pos.x, pos.y);
       }
     } else {
       // Normal init: place only unpositioned or out-of-bounds circles
-      // Build a list of already-placed positions to spread new ones away from them
       const placed: Array<{ x: number; y: number }> = state.circles
         .filter((c) => c.x !== undefined && c.y !== undefined)
         .map((c) => ({ x: c.x!, y: c.y! }));
@@ -205,10 +230,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
         const unplaced = c.x === undefined || c.y === undefined;
         const outOfBounds =
           !unplaced &&
-          (c.x! < MARGIN || c.x! > w - MARGIN || c.y! < MARGIN || c.y! > h - MARGIN);
+          (c.x! < MARGIN || c.x! > VW - MARGIN || c.y! < MARGIN || c.y! > VH - MARGIN);
         if (!unplaced && !outOfBounds) continue;
         initializedIds.current.add(c.id);
-        const pos = spreadSpot(w, h, placed);
+        const pos = spreadSpot(bounds, placed);
         placed.push(pos);
         moveCircle(c.id, pos.x, pos.y);
       }
@@ -236,6 +261,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
   chainRef.current = chain;
   const circlesRef = useRef(state.circles);
   circlesRef.current = state.circles;
+
+  // Pan gesture tracking (panAnim/panXRef/panYRef come from props)
+  const isPanningRef = useRef(false);
+  const panGestureStart = useRef<{ sx: number; sy: number; startPx: number; startPy: number } | null>(null);
 
   // Drag in layout mode
   const [drag, setDrag] = useState<{ id: string; x: number; y: number } | null>(null);
@@ -403,9 +432,12 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     (x: number, y: number): CircleNode | null => {
       const w = boardSize?.w ?? 0;
       const h = boardSize?.h ?? 0;
+      const VW = w * BOARD_MULT;
+      const VH = h * BOARD_MULT;
       const s = scaleRef.current;
-      const lx = (x - w / 2) / s + w / 2;
-      const ly = (y - h / 2) / s + h / 2;
+      // Convert screen touch to virtual canvas coordinates
+      const lx = (x - w / 2 - panXRef.current) / s + VW / 2;
+      const ly = (y - h / 2 - panYRef.current) / s + VH / 2;
       const r = HIT_RADIUS;
       for (const c of circlesRef.current) {
         if (c.x === undefined || c.y === undefined) continue;
@@ -448,13 +480,18 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
   const scatterAllCircles = useCallback(() => {
     if (!boardSize) return;
     const { w, h } = boardSize;
+    const VW = w * BOARD_MULT;
+    const VH = h * BOARD_MULT;
+    // Place circles in the currently visible canvas region so they land on-screen
+    // regardless of how far the user has panned or how much they've zoomed.
+    const bounds = visibleBounds(VW, VH, w, h, panXRef.current, panYRef.current, scaleRef.current);
     const placed: Array<{ x: number; y: number }> = [];
     for (const c of circlesRef.current) {
-      const pos = spreadSpot(w, h, placed);
+      const pos = spreadSpot(bounds, placed);
       placed.push(pos);
       moveCircle(c.id, pos.x, pos.y);
     }
-  }, [boardSize, moveCircle]);
+  }, [boardSize, moveCircle, scaleRef]);
 
   const panResponder = useMemo(
     () =>
@@ -475,6 +512,10 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
               setDrag({ id: hit.id, x: hit.x, y: hit.y });
               triggerHaptic("light");
               sound.play("tick", 1.2);
+            } else {
+              // No circle hit — start panning the virtual canvas
+              isPanningRef.current = true;
+              panGestureStart.current = { sx: x, sy: y, startPx: panXRef.current, startPy: panYRef.current };
             }
             return;
           }
@@ -521,6 +562,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
             triggerHaptic("light");
             sound.play("tick", 1.0);
           } else {
+            // No circle hit — start panning
+            isPanningRef.current = true;
+            panGestureStart.current = { sx: x, sy: y, startPx: panXRef.current, startPy: panYRef.current };
             setChain([]);
           }
         },
@@ -532,15 +576,32 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           const x = evt.nativeEvent.locationX;
           const y = evt.nativeEvent.locationY;
 
+          // Board panning (shared across layout and play modes)
+          if (isPanningRef.current && panGestureStart.current) {
+            const gs = panGestureStart.current;
+            const w = boardSize?.w ?? 0;
+            const h = boardSize?.h ?? 0;
+            const maxPanX = (w * BOARD_MULT - w) / 2;
+            const maxPanY = (h * BOARD_MULT - h) / 2;
+            const newPx = clamp(gs.startPx + (x - gs.sx), -maxPanX, maxPanX);
+            const newPy = clamp(gs.startPy + (y - gs.sy), -maxPanY, maxPanY);
+            panXRef.current = newPx;
+            panYRef.current = newPy;
+            panAnim.setValue({ x: newPx, y: newPy });
+            return;
+          }
+
           if (mode === "layout") {
             const cur = dragRef.current;
             if (!cur || !boardSize) return;
             const w = boardSize.w;
             const h = boardSize.h;
+            const VW = w * BOARD_MULT;
+            const VH = h * BOARD_MULT;
             const s = scaleRef.current;
-            const lx = (x - w / 2) / s + w / 2;
-            const ly = (y - h / 2) / s + h / 2;
-            setDrag({ id: cur.id, x: clamp(lx, MARGIN, w - MARGIN), y: clamp(ly, MARGIN, h - MARGIN) });
+            const lx = (x - w / 2 - panXRef.current) / s + VW / 2;
+            const ly = (y - h / 2 - panYRef.current) / s + VH / 2;
+            setDrag({ id: cur.id, x: clamp(lx, MARGIN, VW - MARGIN), y: clamp(ly, MARGIN, VH - MARGIN) });
             return;
           }
 
@@ -586,6 +647,12 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           if (isPinchingRef.current) {
             const touches = evt.nativeEvent.touches;
             if (touches.length < 2) { isPinchingRef.current = false; pinchInit.current = null; }
+            return;
+          }
+
+          if (isPanningRef.current) {
+            isPanningRef.current = false;
+            panGestureStart.current = null;
             return;
           }
 
@@ -752,6 +819,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           soloTapStartRef.current = null;
           isPinchingRef.current = false;
           pinchInit.current = null;
+          isPanningRef.current = false;
+          panGestureStart.current = null;
         },
       }),
     [
@@ -786,6 +855,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
     setDrag(null);
     tapStartRef.current = null;
     soloTapStartRef.current = null;
+    isPanningRef.current = false;
+    panGestureStart.current = null;
   }, [mode]);
 
   // Animate formula text smoothly in/out
@@ -848,6 +919,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
 
   const w = boardSize?.w ?? 0;
   const h = boardSize?.h ?? 0;
+  const VW = w * BOARD_MULT;
+  const VH = h * BOARD_MULT;
   const now = Date.now(); // stable within a render frame
 
   return (
@@ -862,9 +935,16 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
           ]}
         >
           <Animated.View
-            style={[{ position: "absolute", left: 0, top: 0, width: w, height: h, transform: [{ scale }] }]}
+            style={[{
+              position: "absolute",
+              left: -(VW - w) / 2,
+              top: -(VH - h) / 2,
+              width: VW,
+              height: VH,
+              transform: [{ translateX: panAnim.x }, { translateY: panAnim.y }, { scale }],
+            }]}
           >
-            <Svg width={w} height={h}>
+            <Svg width={VW} height={VH}>
               {/* Chain lines */}
               {chain.map((c, i) => {
                 if (i === 0) return null;
@@ -890,8 +970,8 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 const a = renderPos(last);
                 if (!a) return null;
                 const sV = scaleRef.current;
-                const px = (pointer.x - w / 2) / sV + w / 2;
-                const py = (pointer.y - h / 2) / sV + h / 2;
+                const px = (pointer.x - w / 2 - panXRef.current) / sV + VW / 2;
+                const py = (pointer.y - h / 2 - panYRef.current) / sV + VH / 2;
                 return (
                   <Line
                     x1={a.x} y1={a.y} x2={px} y2={py}
@@ -1045,8 +1125,9 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
                 const pos = renderPos(c);
                 if (!pos) return null;
                 const sV = scaleRef.current;
-                const sx = (pos.x - w / 2) * sV + w / 2;
-                const sy = (pos.y - h / 2) * sV + h / 2;
+                // Map virtual-canvas position to physical screen position
+                const sx = (pos.x - VW / 2) * sV + w / 2 + panXRef.current;
+                const sy = (pos.y - VH / 2) * sV + h / 2 + panYRef.current;
                 const cost = c.corrupted ? cleanseCostFor(c) : upgradeCostFor(c);
                 const affordable = state.points >= cost;
                 const isCleanse = c.corrupted;
@@ -1204,14 +1285,14 @@ export function GameBoard({ mode, scale, scaleRef }: Props) {
         <View style={[styles.modeHint, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.modeHintText, { color: colors.mutedForeground }]}>
             {mode === "layout"
-              ? "Drag to move · Pinch to zoom"
+              ? "Drag circles to move · Drag empty space to pan · Pinch to zoom"
               : mode === "upgrade"
                 ? "Tap to upgrade/cleanse · Hold 2s to rapid-upgrade"
                 : mode === "delete"
                   ? "Tap a circle to delete it"
                   : soloTapReady
                   ? "Only one circle — tap it to score (3 s cooldown)"
-                  : "Swipe to chain, release to earn"}
+                  : "Swipe to chain · Drag empty space to pan"}
           </Text>
         </View>
       </View>

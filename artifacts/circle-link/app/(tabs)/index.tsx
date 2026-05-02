@@ -22,6 +22,9 @@ export default function GameScreen() {
 
   const scale = useRef(new Animated.Value(1)).current;
   const scaleRef = useRef(1);
+  const panAnim = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const panXRef = useRef(0);
+  const panYRef = useRef(0);
 
   // Track win as a false→true transition this session only.
   // Saves start with hasWon=true if already won; we must NOT show the modal on load.
@@ -36,12 +39,11 @@ export default function GameScreen() {
 
   const resetView = useCallback(() => {
     scaleRef.current = 1;
-    Animated.spring(scale, {
-      toValue: 1,
-      friction: 6,
-      useNativeDriver: true,
-    }).start();
-  }, [scale]);
+    panXRef.current = 0;
+    panYRef.current = 0;
+    Animated.spring(scale, { toValue: 1, friction: 6, useNativeDriver: true }).start();
+    Animated.spring(panAnim, { toValue: { x: 0, y: 0 }, friction: 6, useNativeDriver: true }).start();
+  }, [scale, panAnim]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -55,7 +57,14 @@ export default function GameScreen() {
           { marginBottom: insets.bottom + TAB_BAR_HEIGHT },
         ]}
       >
-        <GameBoard mode={mode} scale={scale} scaleRef={scaleRef} />
+        <GameBoard
+          mode={mode}
+          scale={scale}
+          scaleRef={scaleRef}
+          panAnim={panAnim}
+          panXRef={panXRef}
+          panYRef={panYRef}
+        />
       </View>
       <WinModal visible={freshWin} onClose={() => setFreshWin(false)} />
       <AchievementToast />
