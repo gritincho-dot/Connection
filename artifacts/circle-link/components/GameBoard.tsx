@@ -559,7 +559,9 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
           if (mode === "layout") {
             const hit = findCircleAt(x, y);
             if (hit && hit.x !== undefined && hit.y !== undefined) {
-              setDrag({ id: hit.id, x: hit.x, y: hit.y });
+              const d = { id: hit.id, x: hit.x, y: hit.y };
+              dragRef.current = d;
+              setDrag(d);
               triggerHaptic("light");
               sound.play("tick", 1.2);
             } else {
@@ -651,7 +653,9 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
             const s = scaleRef.current;
             const lx = (x - w / 2 - panXRef.current) / s + VW / 2;
             const ly = (y - h / 2 - panYRef.current) / s + VH / 2;
-            setDrag({ id: cur.id, x: clamp(lx, MARGIN, VW - MARGIN), y: clamp(ly, MARGIN, VH - MARGIN) });
+            const d = { id: cur.id, x: clamp(lx, MARGIN, VW - MARGIN), y: clamp(ly, MARGIN, VH - MARGIN) };
+            dragRef.current = d;
+            setDrag(d);
             return;
           }
 
@@ -708,7 +712,12 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
 
           if (mode === "layout") {
             const cur = dragRef.current;
-            if (cur) { moveCircle(cur.id, cur.x, cur.y); setDrag(null); sound.play("pop", 1.1); }
+            if (cur) {
+              moveCircle(cur.id, cur.x, cur.y);
+              dragRef.current = null;
+              setDrag(null);
+              sound.play("pop", 1.1);
+            }
             return;
           }
 
@@ -854,10 +863,9 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
                 Animated.spring(comboScaleAnim, { toValue: 1, friction: 5, tension: 220, useNativeDriver: true }).start();
               }
 
-              // Scatter all circles to random new positions after release, then snap view back to centre
+              // Scatter all circles to random new positions within the visible area
               const scatterDelay = cur.length * 40 + 80;
               setTimeout(() => scatterAllCircles(), scatterDelay);
-              setTimeout(() => onResetView?.(), scatterDelay + 50);
             }
           }
           setPointer(null);
@@ -869,6 +877,7 @@ export function GameBoard({ mode, onResetView, scale, scaleRef, panAnim, panXRef
           tapStartRef.current = null;
           setPointer(null);
           setChain([]);
+          dragRef.current = null;
           setDrag(null);
           soloTapStartRef.current = null;
           isPinchingRef.current = false;
